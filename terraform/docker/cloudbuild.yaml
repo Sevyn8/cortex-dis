@@ -1,0 +1,118 @@
+# Cloud Build: build + push all DIS service images to Artifact Registry.
+#
+# Run from the repo root (staging frontend = real mode, pointing at dis-ui-server):
+#   gcloud builds submit --config terraform/docker/cloudbuild.yaml \
+#     --substitutions=_REGION=asia-south1,_REPO=dis-images,_DIS_UI_SERVER_MODE=real,_DIS_UI_SERVER_BASE_URL=https://dis-ui-server-XXXX.run.app .
+#
+# Images are tagged with the build's short commit SHA ($SHORT_SHA) and :latest.
+# dis-ui-server uses its existing services/dis-ui-server/Dockerfile.
+# The 3 workers + the frontend use the Dockerfiles in terraform/docker/. The -f paths
+# below are relative to the uploaded source root (/workspace = repo root), so they are
+# spelled terraform/docker/<name>.Dockerfile. For dis-ui prefer the dedicated
+# cloudbuild-dis-ui.yaml (it passes all four VITE args + --no-cache).
+#
+# Frontend mode is a BUILD-TIME Vite var baked into the SPA bundle (the UI reads
+# VITE_DIS_UI_SERVER_MODE + VITE_DIS_UI_SERVER_BASE_URL at build, not at runtime).
+# The base URL is known only AFTER dis-ui-server deploys, so it is supplied here as a
+# substitution at build time (the second-apply/build ordering). The old _API_BASE /
+# VITE_API_BASE pair was dead: the UI never read it.
+
+substitutions:
+  _REGION: "asia-south1"
+  _REPO: "dis-images"
+  # Frontend build-time mode. Default 'fixture' (safe); staging passes 'real'.
+  _DIS_UI_SERVER_MODE: "fixture"
+  # dis-ui-server base URL the frontend calls in real mode (empty in fixture builds).
+  _DIS_UI_SERVER_BASE_URL: ""
+  # dev-login persona tokens baked into the staging SPA (secrets; pass at submit time,
+  # empty default just means the personas are not pre-filled).
+  _STUB_TOKEN_TENANT: ""
+  _STUB_TOKEN_OPS: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # dis-ui-server (existing Dockerfile in the service dir)
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - services/dis-ui-server/Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui-server:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui-server:latest
+      - .
+
+  # csv-ingest-worker
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - terraform/docker/csv-ingest-worker.Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/csv-ingest-worker:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/csv-ingest-worker:latest
+      - .
+
+  # streaming-consumer
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - terraform/docker/streaming-consumer.Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/streaming-consumer:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/streaming-consumer:latest
+      - .
+
+  # mirror-sync-consumer
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - terraform/docker/mirror-sync-consumer.Dockerfile
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/mirror-sync-consumer:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/mirror-sync-consumer:latest
+      - .
+
+  # dis-ui frontend. CONTEXT = services/dis-ui (the Dockerfile's COPYs are
+  # context-relative and package.json/pnpm-lock.yaml live ONLY there; a repo-root
+  # context bakes a stale cached bundle). The four Vite vars are baked into the bundle
+  # at build time (a runtime env does nothing for a static SPA). Prefer the dedicated
+  # cloudbuild-dis-ui.yaml, which also forces --no-cache.
+  # DOCKER_BUILDKIT=1 is REQUIRED here: the dis-ui Dockerfile uses a `# syntax=`
+  # directive + a heredoc `COPY <<NGINX` that the classic builder cannot parse. The
+  # worker + dis-ui-server steps above use plain `COPY --from=` (no heredoc / no syntax
+  # directive), so they build on the classic builder and do not set this.
+  - name: gcr.io/cloud-builders/docker
+    env: ['DOCKER_BUILDKIT=1']
+    args:
+      - build
+      - -f
+      - terraform/docker/dis-ui.Dockerfile
+      - --build-arg
+      - VITE_DIS_UI_SERVER_MODE=${_DIS_UI_SERVER_MODE}
+      - --build-arg
+      - VITE_DIS_UI_SERVER_BASE_URL=${_DIS_UI_SERVER_BASE_URL}
+      - --build-arg
+      - VITE_STUB_TOKEN_TENANT=${_STUB_TOKEN_TENANT}
+      - --build-arg
+      - VITE_STUB_TOKEN_OPS=${_STUB_TOKEN_OPS}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui:latest
+      - services/dis-ui
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui-server
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/csv-ingest-worker
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/streaming-consumer
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/mirror-sync-consumer
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui

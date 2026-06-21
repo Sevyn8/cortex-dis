@@ -1,0 +1,344 @@
+openapi: 3.0.3
+info:
+  title: DIS Identity Service
+  description: |
+    Internal HTTP/REST API for the DIS Tenant/Store Identity Service.
+
+    Called by DIS receivers, the streaming consumer, and dis-ui-server to resolve tenant
+    and store identity from various auth contexts, and to validate tenant/store
+    existence at processing time. The service wraps Customer Master with a cache
+    and circuit breaker; callers never reach Customer Master directly.
+
+    This contract is internal-only. The service is not exposed externally.
+  version: 1.0.0
+  contact:
+    name: DIS team
+
+servers:
+  - url: http://identity-service:8080
+    description: In-cluster service (local + cloud, routed via env var)
+
+security:
+  - serviceToken: []
+
+paths:
+  /v1/resolve_from_token:
+    post:
+      operationId: resolveFromToken
+      summary: Resolve identity from a Customer Master JWT.
+      description: |
+        Used by API/webhook receivers that authenticate callers with a bearer token.
+        The receiver passes the validated JWT; the service extracts identity
+        (tenant_id, store_id, metadata) from the token claims, validates against
+        cached/Customer Master state, and returns the resolved identity.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveFromTokenRequest" }
+      responses:
+        "200":
+          description: Identity resolved successfully.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/IdentityNotFound" }
+        "503": { $ref: "#/components/responses/CircuitOpen" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/resolve_from_upload:
+    post:
+      operationId: resolveFromUpload
+      summary: Resolve identity from an upload session ID.
+      description: |
+        Used by the CSV upload paths (DIS UI session via dis-ui-server, and per-tenant
+        ERP POST endpoint). Identity is bound to an upload session, not a request
+        token. The caller passes the upload_session_id; the service maps it to
+        tenant + store via Customer Master.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveFromUploadRequest" }
+      responses:
+        "200":
+          description: Identity resolved successfully.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/IdentityNotFound" }
+        "503": { $ref: "#/components/responses/CircuitOpen" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/resolve_from_endpoint:
+    post:
+      operationId: resolveFromEndpoint
+      summary: Resolve identity from an endpoint config ID.
+      description: |
+        Used by the reverse-API puller and the per-tenant ERP POST endpoint.
+        Identity is bound to the endpoint configuration registered for that pull
+        target or push receiver. The caller passes the endpoint_config_id; the
+        service maps it to tenant + store.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResolveFromEndpointRequest" }
+      responses:
+        "200":
+          description: Identity resolved successfully.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/IdentityNotFound" }
+        "503": { $ref: "#/components/responses/CircuitOpen" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /v1/validate:
+    post:
+      operationId: validate
+      summary: Validate that a (tenant_id, store_id) pair exists and is active.
+      description: |
+        Used by the streaming consumer as an FK pre-check at processing time,
+        catching tenant/store deactivations that happened between receive and
+        process. Lightweight: cache lookup with fallback to Customer Master, or
+        to identity_mirror if Customer Master is unavailable (stale-while-error).
+        Returns a small response, not a full Identity object.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ValidateRequest" }
+      responses:
+        "200":
+          description: Validation result.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidateResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "503": { $ref: "#/components/responses/CircuitOpen" }
+        "500": { $ref: "#/components/responses/InternalError" }
+
+  /healthz:
+    get:
+      operationId: healthz
+      summary: Liveness probe.
+      security: []
+      responses:
+        "200":
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+
+  /readyz:
+    get:
+      operationId: readyz
+      summary: Readiness probe.
+      description: Returns 200 only if cache and Customer Master are both reachable.
+      security: []
+      responses:
+        "200":
+          description: Service is ready to serve traffic.
+        "503":
+          description: Not ready (cache or Customer Master unreachable).
+
+components:
+  securitySchemes:
+    serviceToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Internal service-to-service token. Verified against the cluster's
+        service-account issuer. Callers must be DIS-internal services.
+
+  schemas:
+    TenantId:
+      type: string
+      format: uuid
+      example: "019e5e3c-b5d3-705f-9002-2451c4ca2626"
+      description: |
+        Internal tenant UUID, identical to Customer Master core.tenants.id and
+        identity_mirror.tenants.tenant_id (decisions.md D37/D52). The load-bearing
+        identity: callers write identity downstream from this field. The invented
+        't_*' external form is retired.
+
+    StoreId:
+      type: string
+      format: uuid
+      example: "019e5f10-2a3b-7c4d-8e5f-6a7b8c9d0e1f"
+      description: |
+        Internal store UUID, identical to Customer Master core.stores.id and
+        identity_mirror.stores.store_id (decisions.md D37/D52). The load-bearing
+        identity. The invented 's_*' external form is retired.
+
+    Identity:
+      type: object
+      required: [tenant_id, store_id, is_active, source]
+      properties:
+        tenant_id: { $ref: "#/components/schemas/TenantId" }
+        store_id: { $ref: "#/components/schemas/StoreId" }
+        display_code:
+          type: string
+          example: "buc-ees"
+          description: |
+            Customer Master's authoritative external code for the tenant
+            (core.tenants.display_code). Optional in the schema, but the service
+            MUST populate it when present in Customer Master (the source column is
+            nullable). Readability only — never a substitute for tenant_id
+            (decisions.md D55).
+        store_code:
+          type: string
+          nullable: true
+          example: "TX-102"
+          description: |
+            Customer Master's authoritative external code for the store
+            (core.stores.store_code). Optional/nullable: the source column is
+            nullable. Readability only — never a substitute for store_id
+            (decisions.md D55).
+        is_active:
+          type: boolean
+          description: Whether the tenant and store are both currently active.
+        source:
+          type: string
+          enum: [cache_fresh, cache_stale, customer_master]
+          description: |
+            Where this identity was resolved from. cache_fresh = within TTL.
+            cache_stale = served stale during Customer Master outage
+            (stale-while-error window, up to 5 min). customer_master = freshly
+            fetched from Customer Master.
+        metadata:
+          type: object
+          description: |
+            Free-form additional fields projected from Customer Master.
+            Callers project only what they need. Receivers typically read
+            source_config or pii_policy_version; the streaming consumer
+            typically ignores metadata entirely.
+          additionalProperties: true
+        resolved_at:
+          type: string
+          format: date-time
+          description: When this identity record was last refreshed.
+
+    ResolveFromTokenRequest:
+      type: object
+      required: [jwt]
+      properties:
+        jwt:
+          type: string
+          description: |
+            Customer Master-issued JWT, already verified for signature and
+            expiry by the caller (typically the receiver's auth middleware).
+            This service extracts identity from claims; it does not re-verify
+            the signature.
+
+    ResolveFromUploadRequest:
+      type: object
+      required: [upload_session_id]
+      properties:
+        upload_session_id:
+          type: string
+          pattern: "^us_[a-z0-9]{12}$"
+          example: "us_a1b2c3d4e5f6"
+          description: |
+            Upload session identifier issued by Customer Master for an
+            authenticated user's upload. Bound to a tenant + store at the time
+            of session creation.
+
+    ResolveFromEndpointRequest:
+      type: object
+      required: [endpoint_config_id]
+      properties:
+        endpoint_config_id:
+          type: string
+          pattern: "^ec_[a-z0-9]{12}$"
+          example: "ec_aabbccddeeff"
+          description: |
+            Endpoint configuration identifier registered in Customer Master.
+            Used by reverse-API and ERP POST receivers where identity is
+            bound to the endpoint, not to a request token.
+
+    ValidateRequest:
+      type: object
+      required: [tenant_id, store_id]
+      properties:
+        tenant_id: { $ref: "#/components/schemas/TenantId" }
+        store_id: { $ref: "#/components/schemas/StoreId" }
+
+    ValidateResponse:
+      type: object
+      required: [exists, is_active, source]
+      properties:
+        exists:
+          type: boolean
+          description: True if both tenant and store are known to Customer Master (or to identity_mirror in stale-while-error).
+        is_active:
+          type: boolean
+          description: True if both tenant and store are currently active. False if either is deactivated.
+        source:
+          type: string
+          enum: [cache_fresh, cache_stale, customer_master, identity_mirror_fallback]
+          description: Where the validation answer was sourced from.
+
+    Error:
+      type: object
+      required: [error_code, message]
+      properties:
+        error_code:
+          type: string
+          description: Machine-readable error code.
+          enum:
+            - unauthorized
+            - identity_not_found
+            - circuit_open
+            - internal_error
+            - invalid_request
+        message:
+          type: string
+          description: Human-readable error description.
+        trace_id:
+          type: string
+          format: uuid
+          description: Server-side trace_id for this request. Returned on every error response for log correlation.
+
+  responses:
+    Unauthorized:
+      description: Missing, malformed, or invalid service token.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    IdentityNotFound:
+      description: |
+        The token, upload session, or endpoint config did not map to a known
+        tenant + store. Caller should treat as a hard failure (no retry).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    CircuitOpen:
+      description: |
+        Customer Master is unhealthy and the stale-while-error window has been
+        exceeded (no cached entry within 5 minutes). Callers should retry with
+        backoff for resolve methods, or fall back to identity_mirror for
+        validate calls.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Suggested retry delay in seconds.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+    InternalError:
+      description: Unexpected server error.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }

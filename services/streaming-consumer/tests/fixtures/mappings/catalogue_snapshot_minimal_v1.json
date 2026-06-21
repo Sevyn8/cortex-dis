@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "rename": {
+    "code": "sku_id",
+    "name": "product_name",
+    "price": "current_retail_price",
+    "qty": "stock_qty"
+  },
+  "normalize": {
+    "current_retail_price": [
+      {"op": "parse_decimal", "args": {"decimal_separator": ".", "thousands_separator": null}}
+    ],
+    "stock_qty": [
+      {"op": "parse_decimal", "args": {"decimal_separator": ".", "thousands_separator": null}}
+    ]
+  },
+  "cast": {
+    "current_retail_price": {"type": "decimal", "precision": 12, "scale": 4},
+    "stock_qty": {"type": "decimal", "precision": 14, "scale": 3}
+  },
+  "derive": {
+    "currency": [{"op": "constant", "args": {"value": "EUR"}}]
+  }
+}

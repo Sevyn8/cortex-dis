@@ -1,0 +1,72 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ithina_dis_admin
+      POSTGRES_PASSWORD: ithina_dis_admin_password
+      POSTGRES_DB: ithina_dis_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/local/postgres-init.sql:/docker-entrypoint-initdb.d/01-init-app-role.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ithina_dis_admin -d ithina_dis_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  pubsub:
+    image: gcr.io/google.com/cloudsdktool/google-cloud-cli:emulators
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=local-dis
+    ports:
+      - "8085:8085"
+
+  gcs:
+    image: fsouza/fake-gcs-server:latest
+    command: -scheme http -public-host localhost:4443 -port 4443
+    ports:
+      - "4443:4443"
+    volumes:
+      - gcs-data:/storage
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # ---- Slice 2 fakes (test infrastructure; no real auth / resolution) ----
+  customer-master:
+    build:
+      context: .
+      dockerfile: infra/local/fakes.Dockerfile
+    command: uvicorn dis_testing.fakes.customer_master:app --host 0.0.0.0 --port 8082
+    environment:
+      PUBSUB_EMULATOR_HOST: pubsub:8085
+      PUBSUB_PROJECT_ID: local-dis
+    ports:
+      - "8082:8082"
+    depends_on:
+      - pubsub
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8082/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  identity-service-fake:
+    build:
+      context: .
+      dockerfile: infra/local/fakes.Dockerfile
+    command: uvicorn dis_testing.fakes.identity_service:app --host 0.0.0.0 --port 8081
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/healthz')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  postgres-data:
+  gcs-data:

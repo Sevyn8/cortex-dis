@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ithina.dis.contracts.pubsub.pipeline.dlq.v1",
+  "title": "pipeline.dlq",
+  "description": "Published by the streaming-consumer when Cloud SQL is unhealthy (circuit breaker open) and a batch cannot commit. The batch is diverted here instead of being lost. A separate DLQ drainer (or recovery process) replays from this topic when Cloud SQL health restores. Distinct from the quarantine topic: this is infrastructure failure (recoverable), not data failure (tenant action needed).",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "dlq_id",
+    "reason",
+    "diverted_ts",
+    "batch"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "dlq_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this DLQ entry. Used by the recovery process for idempotency."
+    },
+    "reason": {
+      "type": "string",
+      "enum": ["cloud_sql_unhealthy", "cloud_sql_write_timeout", "cloud_sql_connection_pool_exhausted", "fk_retries_exhausted"],
+      "description": "Why this batch was diverted to DLQ rather than committed to canonical."
+    },
+    "reason_detail": {
+      "type": "string",
+      "description": "Free-text additional context (probe error, last exception message). Optional."
+    },
+    "diverted_ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the diversion happened."
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal tenant UUID whose batch was diverted. All rows in the batch belong to one tenant (batched by tenant_id). Load-bearing identity."
+    },
+    "tenant_display_code": {
+      "type": "string",
+      "description": "Customer Master's authoritative external code for the tenant (tenants.display_code). Optional in the schema, but producers MUST populate it when publishing. Readability only, never a substitute for tenant_id."
+    },
+    "batch": {
+      "type": "object",
+      "description": "The batch that could not be committed.",
+      "required": ["row_count", "trace_ids", "rows_ref"],
+      "properties": {
+        "row_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "trace_ids": {
+          "type": "array",
+          "items": { "type": "string", "format": "uuid" },
+          "description": "Distinct trace_ids represented in this batch. Used by the recovery process to track which chunks are pending."
+        },
+        "rows_ref": {
+          "type": "string",
+          "description": "GCS URI of the serialized batch payload. The DLQ message does not carry rows inline (could be 500+ rows, 100s of KB each). The recovery process fetches from this URI when ready to retry. The tenant path segment is the internal tenant UUID."
+        },
+        "mapping_version_ids": {
+          "type": "array",
+          "items": { "type": "integer" },
+          "description": "Distinct mapping_version_ids used to produce these rows. Replay must use the same versions, not current. Carries B1 pinning forward into recovery."
+        }
+      }
+    },
+    "retry_attempts": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "How many times this batch has been retried via DLQ. Hard cap (default 5) enforced by the recovery process; exceeded entries surface as ops alerts."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,71 @@
+[project]
+name = "dis-ui-server"
+version = "0.0.0"
+description = "DIS UI backend-for-frontend foundation (Slice 13a, D26): deployable FastAPI skeleton with /healthz (DB-free liveness) and /readyz (proves a tenant-scoped dis-rls session opens), the auth seam (dev-stub HS256 verifier behind get_current_identity / require_tenant / require_ops — the SOLE source of tenant_id), DisError-to-envelope exception handlers (contract §2.3), structured logging, and the SQLAlchemy declarative base for later CRUD. No UI data endpoints (Slices 8/14+), no JWKS (13b), no Pub/Sub, no config.source_mappings writes."
+requires-python = ">=3.12"
+dependencies = [
+  # DisError root + the Slice-13a auth-seam errors, UUIDv7 (readiness probe
+  # tenant), trace_id contextvar (envelope), structured logging.
+  "dis-core",
+  # The ONLY Postgres path (hard rules 1 & 12): create_rls_engine + the
+  # per-tenant rls_session, inheriting the current_database()=='ithina_dis_db'
+  # + NOBYPASSRLS target guard (DIS on 5433, never Customer Master).
+  "dis-rls",
+  # HTTP surface; handlers are thin APIRouters mounted by main.py.
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  # Dev-stub HS256 verification (contract §2.1); the 13b JWKS swap reuses it.
+  "pyjwt[crypto]>=2.8",
+  # Async engine plumbing + the declarative Base for this service's later CRUD
+  # (ORM layer choice: D-number registered at the commit gate). Executes only
+  # through the dis-rls session — never a second engine.
+  "sqlalchemy[asyncio]>=2.0.36",
+  "psycopg[binary]>=3.2",
+  # Request/response models (later slices; FastAPI serializes them directly).
+  "pydantic>=2.9",
+  # Slice 14b: the D49 mapping_rules contract (SourceMapping is BOTH the
+  # create/edit validator and the wire type — one model, no drift).
+  "dis-mapping",
+  # Slice 14b: the canonical event models the field catalog derives from.
+  "dis-canonical",
+  # Slice 14b: mapping_produced_columns — the drift-guarded provenance
+  # partition shared by the catalog AND the create/edit semantic gate.
+  "dis-validation",
+  # Slice 16i: enrichment_fields(CURRENT_POSITION) — the value-guaranteed columns
+  # (currency) the create gate + catalog subtract from the mandatory-to-map set
+  # (D95). Pure lib; the consumer imports it too (no purity contract governs the
+  # service->lib edge). Used for the set only, never for runtime enrichment I/O.
+  "dis-enrichment",
+  # Slice 8: the canonical GCS object path (D53) + the object write for the
+  # synchronous CSV upload — the ONLY sanctioned GCS path (hard rule 9).
+  "dis-storage",
+  # Slice 8: fire-and-forget audit emission for the upload receiver (hard
+  # rule 11); the Postgres writer rides the same dis-rls engine.
+  "dis-audit",
+  # Slice 8: csv.received publish (emulator-guarded, the 9b publisher pattern).
+  "google-cloud-pubsub>=2.23",
+  # Slice 8: the streaming multipart push parser for the 10 MB mid-stream
+  # ceiling (upload_stream.py) — never Starlette's buffering request.form().
+  "python-multipart>=0.0.18",
+  # Slice 8: the blocking GCS/Pub/Sub clients run off the event loop via
+  # anyio.to_thread (root-CLAUDE.md async pattern). Declared explicitly —
+  # imported directly, never ridden transitively off starlette.
+  "anyio>=4",
+  # Mapping-suggestion endpoint: the google-genai client in VERTEX AI mode
+  # (vertexai=True, project+location, ADC from the Cloud Run service account; no API
+  # key). The import is lazy (only the LLM path needs it); with no Vertex config the
+  # endpoint uses the mechanical fallback. The blocking call runs off the loop via
+  # anyio.to_thread, the same pattern as the GCS/Pub/Sub clients above.
+  "google-genai>=1.75.0",
+  # ADC + optional SA impersonation for the Vertex calls (google.auth.default +
+  # impersonated_credentials). Imported DIRECTLY now (not just transitively off
+  # google-genai), so declared explicitly.
+  "google-auth>=2.53",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dis_ui_server"]

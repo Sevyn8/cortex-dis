@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "rename": {
+    "sold_at": "source_sale_timestamp",
+    "sku": "sku_id",
+    "qty": "quantity",
+    "retail": "unit_retail_price",
+    "price": "unit_sale_price",
+    "txn": "transaction_id",
+    "line": "line_item_seq"
+  },
+  "normalize": {
+    "source_sale_timestamp": [
+      {"op": "parse_datetime", "args": {"format": "%Y-%m-%d %H:%M:%S", "timezone": "UTC"}}
+    ],
+    "quantity": [
+      {"op": "parse_decimal", "args": {"decimal_separator": ".", "thousands_separator": null}}
+    ],
+    "unit_retail_price": [
+      {"op": "parse_decimal", "args": {"decimal_separator": ".", "thousands_separator": null}}
+    ],
+    "unit_sale_price": [
+      {"op": "parse_decimal", "args": {"decimal_separator": ".", "thousands_separator": null}}
+    ],
+    "line_item_seq": [
+      {"op": "parse_integer", "args": {"thousands_separator": null}}
+    ]
+  },
+  "cast": {
+    "source_sale_timestamp": {"type": "datetime"},
+    "quantity": {"type": "decimal", "precision": 14, "scale": 3},
+    "unit_retail_price": {"type": "decimal", "precision": 12, "scale": 4},
+    "unit_sale_price": {"type": "decimal", "precision": 12, "scale": 4},
+    "line_item_seq": {"type": "integer"}
+  },
+  "derive": {
+    "event_date": [
+      {"op": "date_from_datetime", "args": {"source_column": "source_sale_timestamp"}}
+    ],
+    "event_subtype": [{"op": "constant", "args": {"value": "SALE"}}],
+    "currency": [{"op": "constant", "args": {"value": "USD"}}]
+  }
+}

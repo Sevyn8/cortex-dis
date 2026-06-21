@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DIS (Ithina Data Platform) - Architecture</title>
+<style>
+  :root {
+    --bg: #f7f5f0;
+    --paper: #ffffff;
+    --ink: #1a1a1a;
+    --muted: #6b6b6b;
+    --line: #d4d0c8;
+    --line-strong: #2a2a2a;
+    --accent: #b8472a;
+    --accent-soft: #fbeee6;
+    --new-bg: #fff8e1;
+    --new-border: #d4a017;
+    --revised-bg: #e6f0fb;
+    --revised-border: #2a5a8a;
+    --deferred-bg: #efece6;
+    --deferred-border: #6b6b6b;
+    --answered-bg: #e8f1e6;
+    --answered-border: #3a6b3a;
+    --ithina: #e8f0e8;
+    --ithina-border: #4a6b4a;
+    --managed: #e8eef5;
+    --managed-border: #3a5a7a;
+    --storage: #f3e8f0;
+    --storage-border: #7a3a6a;
+    --bq: #f0ebe0;
+    --bq-border: #8a6a2a;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 32px 16px;
+    background: var(--bg);
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    color: var(--ink);
+    line-height: 1.55;
+    font-size: 14px;
+  }
+
+  .doc {
+    max-width: 1400px;
+    margin: 0 auto;
+    background: var(--paper);
+    padding: 48px 56px;
+    box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    border: 1px solid var(--line);
+  }
+
+  header {
+    border-bottom: 2px solid var(--line-strong);
+    padding-bottom: 16px;
+    margin-bottom: 32px;
+  }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 4px;
+  }
+
+  h1 {
+    font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif;
+    font-size: 38px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .meta {
+    font-family: 'IBM Plex Mono', 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  h2 {
+    font-family: 'Iowan Old Style', Palatino, Georgia, serif;
+    font-size: 22px;
+    font-weight: 600;
+    margin: 36px 0 18px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+    letter-spacing: -0.005em;
+  }
+
+  .section-num {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+    margin-right: 8px;
+    font-weight: 500;
+  }
+
+  /* ====== diagram framework ====== */
+  .zone {
+    border: 1.5px solid var(--line-strong);
+    border-radius: 4px;
+    padding: 16px;
+    margin: 16px 0;
+    background: var(--paper);
+    position: relative;
+  }
+
+  .zone-label {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--paper);
+    padding: 0 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .row {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: stretch;
+  }
+
+  .row.center { justify-content: center; }
+
+  .box {
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    padding: 12px 14px;
+    background: var(--paper);
+    flex: 1;
+    min-width: 200px;
+    font-size: 14.5px;
+    position: relative;
+  }
+
+  .box.ithina { background: var(--ithina); border-color: var(--ithina-border); }
+  .box.managed { background: var(--managed); border-color: var(--managed-border); }
+  .box.storage { background: var(--storage); border-color: var(--storage-border); }
+  .box.bq { background: var(--bq); border-color: var(--bq-border); }
+  .box.accent { background: var(--accent-soft); border-color: var(--accent); }
+
+  .box-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 8px;
+    color: var(--ink);
+  }
+
+  .box-sub {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+    margin: -4px 0 8px;
+    letter-spacing: 0.05em;
+  }
+
+  .box ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    font-size: 13.5px;
+  }
+
+  .box ul li { margin: 3px 0; }
+
+  .box ol {
+    margin: 6px 0 0;
+    padding-left: 22px;
+    font-size: 13.5px;
+  }
+
+  .box ol li { margin: 3px 0; }
+
+  /* arrows */
+  .arrow {
+    text-align: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 15px;
+    color: var(--line-strong);
+    margin: 6px 0;
+    line-height: 1;
+  }
+
+  .arrow-label {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    letter-spacing: 0.04em;
+  }
+
+  .arrow-horiz {
+    align-self: center;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 18px;
+    color: var(--line-strong);
+    padding: 0 8px;
+  }
+
+  /* NEW tag */
+  .new {
+    display: inline-block;
+    background: var(--new-bg);
+    border: 1px solid var(--new-border);
+    color: #6b4a00;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  .revised {
+    display: inline-block;
+    background: var(--revised-bg);
+    border: 1px solid var(--revised-border);
+    color: #14385c;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  .deferred {
+    display: inline-block;
+    background: var(--deferred-bg);
+    border: 1px solid var(--deferred-border);
+    color: #3a3a3a;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  .answered {
+    display: inline-block;
+    background: var(--answered-bg);
+    border: 1px solid var(--answered-border);
+    color: #1f4a1f;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+
+  /* revision callout box */
+  .revision-callout {
+    background: var(--revised-bg);
+    border: 1.5px solid var(--revised-border);
+    border-left-width: 6px;
+    border-radius: 3px;
+    padding: 16px 20px;
+    margin: 16px 0 32px;
+    font-size: 13.5px;
+  }
+
+  .revision-callout .callout-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: #14385c;
+    margin-bottom: 8px;
+  }
+
+  .revision-callout ul {
+    margin: 6px 0 0;
+    padding-left: 20px;
+  }
+
+  .revision-callout li { margin: 4px 0; }
+
+  /* rationale section */
+  .rationale-block {
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--revised-border);
+    padding: 14px 18px;
+    margin: 12px 0;
+    background: var(--paper);
+    border-radius: 2px;
+  }
+
+  .rationale-block.gap { border-left-color: var(--new-border); }
+  .rationale-block.answered { border-left-color: var(--answered-border); }
+
+  .rationale-title {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin: 0 0 6px;
+    color: var(--ink);
+  }
+
+  .rationale-meta {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-bottom: 8px;
+    letter-spacing: 0.04em;
+  }
+
+  .rationale-block .before-after {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin: 8px 0;
+    font-size: 13px;
+  }
+
+  .rationale-block .before-after > div {
+    padding: 8px 10px;
+    background: var(--bg);
+    border-radius: 2px;
+    border: 1px solid var(--line);
+  }
+
+  .rationale-block .ba-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  .rationale-block .why {
+    font-size: 13.5px;
+    margin-top: 8px;
+  }
+
+  .rationale-block .why-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  /* sequencing roadmap */
+  .roadmap {
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr;
+    gap: 0;
+    border-top: 1px solid var(--line);
+    padding: 12px 0;
+    align-items: start;
+  }
+
+  .roadmap:last-of-type { border-bottom: 1px solid var(--line); }
+
+  .roadmap-when {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--accent);
+    padding-right: 12px;
+  }
+
+  .roadmap-build, .roadmap-defer {
+    font-size: 13.5px;
+    padding-right: 12px;
+  }
+
+  .roadmap-build ul, .roadmap-defer ul {
+    margin: 4px 0 0;
+    padding-left: 18px;
+  }
+
+  .roadmap-build li, .roadmap-defer li {
+    margin: 3px 0;
+  }
+
+  .roadmap-defer {
+    color: var(--muted);
+    font-style: italic;
+  }
+
+  .roadmap-header {
+    display: grid;
+    grid-template-columns: 140px 1fr 1fr;
+    gap: 0;
+    padding: 6px 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .option {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-left: 2px solid var(--line);
+    font-size: 13px;
+  }
+
+  .option.recommended {
+    border-left-color: var(--new-border);
+    background: rgba(212, 160, 23, 0.05);
+  }
+
+  .option-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    text-transform: uppercase;
+  }
+
+  .option.recommended .option-label { color: #8a6a00; }
+
+  /* schema list inside cloud sql box */
+  .schemas {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 6px;
+  }
+
+  .schema {
+    background: rgba(255,255,255,0.6);
+    border: 1px dashed var(--storage-border);
+    border-radius: 2px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .schema-name {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--storage-border);
+    letter-spacing: 0.04em;
+    text-transform: lowercase;
+  }
+
+  .schema ul {
+    margin: 3px 0 0;
+    padding-left: 16px;
+    font-size: 13px;
+  }
+
+  /* legend */
+  .legend {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-top: 16px;
+    padding: 14px 18px;
+    background: var(--bg);
+    border: 1px dashed var(--line-strong);
+    border-radius: 3px;
+    font-size: 13.5px;
+  }
+
+  .legend-item { display: flex; align-items: center; gap: 8px; }
+
+  .swatch {
+    width: 16px;
+    height: 16px;
+    border: 1px solid var(--line-strong);
+    border-radius: 2px;
+  }
+
+  .swatch.ithina { background: var(--ithina); border-color: var(--ithina-border); }
+  .swatch.managed { background: var(--managed); border-color: var(--managed-border); }
+  .swatch.storage { background: var(--storage); border-color: var(--storage-border); }
+  .swatch.bq { background: var(--bq); border-color: var(--bq-border); }
+  .swatch.new { background: var(--new-bg); border-color: var(--new-border); }
+
+  /* flow connectors between zones */
+  .connector {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+  }
+
+  .connector-line {
+    flex: 1;
+    height: 1px;
+    background: var(--line-strong);
+    max-width: 100px;
+  }
+
+  .pill {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--paper);
+    border: 1px solid var(--line-strong);
+    padding: 5px 12px;
+    border-radius: 12px;
+    color: var(--ink);
+    letter-spacing: 0.04em;
+  }
+
+  /* small caption under each zone */
+  .caption {
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 8px;
+    font-style: italic;
+  }
+
+  /* identity side rail */
+  .identity-rail {
+    display: grid;
+    grid-template-columns: 1fr 12px 1fr;
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .rail-flow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--line-strong);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px;
+  }
+
+  /* sinks row */
+  .sinks {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  /* footnote */
+  footer {
+    margin-top: 48px;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px;
+    color: var(--muted);
+    font-family: 'IBM Plex Mono', monospace;
+    display: flex;
+    justify-content: space-between;
+  }
+
+  @media print {
+    body { background: white; padding: 0; }
+    .doc { box-shadow: none; border: none; padding: 24px; }
+  }
+
+  /* cost table */
+  .cost-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    margin-top: 8px;
+  }
+
+  .cost-table th, .cost-table td {
+    border: 1px solid var(--line);
+    padding: 8px 12px;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .cost-table th {
+    background: var(--bg);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--ink);
+  }
+
+  .cost-table td.amount {
+    font-family: 'IBM Plex Mono', monospace;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .cost-table tfoot td {
+    background: var(--bg);
+    font-weight: 600;
+    border-top: 2px solid var(--line-strong);
+  }
+
+  .cost-tier {
+    display: grid;
+    grid-template-columns: 180px 1fr 140px;
+    gap: 0;
+    border-top: 1px solid var(--line);
+    padding: 10px 0;
+    align-items: start;
+  }
+
+  .cost-tier:last-of-type { border-bottom: 1px solid var(--line); }
+
+  .cost-tier-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding-right: 12px;
+  }
+
+  .cost-tier-label.free { color: #2a6b3a; }
+  .cost-tier-label.mild { color: #6b6a2a; }
+  .cost-tier-label.real { color: var(--accent); }
+
+  .cost-tier-body { font-size: 13.5px; padding-right: 12px; }
+  .cost-tier-body ul { margin: 0; padding-left: 18px; }
+  .cost-tier-body li { margin: 3px 0; }
+
+  .cost-tier-savings {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--muted);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .scenario-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .scenario {
+    border: 1px solid var(--line-strong);
+    border-radius: 3px;
+    padding: 12px 14px;
+    background: var(--paper);
+  }
+
+  .scenario-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+
+  .scenario-amount {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--ink);
+  }
+
+  .scenario-detail {
+    font-size: 13px;
+    color: var(--ink);
+    margin-top: 6px;
+  }
+
+  @media (max-width: 900px) {
+    .doc { padding: 24px 16px; }
+    .row { flex-direction: column; }
+    .sinks { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="doc">
+
+<header>
+  <p class="eyebrow">Architecture Diagram</p>
+  <h1>DIS &middot; Data Integration System</h1>
+  <p class="meta">Ithina Data Platform &middot; multi-tenant retail data pipeline &middot; GCP managed-first &middot; p50 &lt; 3s, p95 &lt; 8s end-to-end</p>
+  <p class="meta" style="margin-top: 8px;"><strong>Companion docs:</strong> <code>architecture.md</code> (the WHY) &middot; <code>decisions.md</code> (indexed decision register) &middot; <code>engineering-reference.md</code> (the WHAT) &middot; <code>build-guide.md</code> (the HOW) &middot; <code>cost-estimate.md</code> (cost projection).</p>
+</header>
+
+
+<!-- ============== INGRESS ============== -->
+<h2><span class="section-num">01</span>Ingress</h2>
+
+<div class="zone">
+  <span class="zone-label">Ingress &middot; Ithina-owned</span>
+
+  <div class="row">
+    <div class="box ithina">
+      <p class="box-title">POS / ERP / etc.</p>
+      <p class="box-sub">API + Webhook</p>
+      <ul><li>Event-driven push from store systems</li></ul>
+    </div>
+    <div class="box ithina">
+      <p class="box-title">Manual CSV upload</p>
+      <p class="box-sub">UI</p>
+      <ul><li>Human-initiated, occasional</li></ul>
+    </div>
+    <div class="box ithina">
+      <p class="box-title">ERP CSV POST</p>
+      <p class="box-sub">Per-tenant endpoint</p>
+      <ul><li>ERP-driven batches, 15-30 min</li></ul>
+    </div>
+    <div class="box ithina">
+      <p class="box-title">External APIs</p>
+      <p class="box-sub">Reverse pull</p>
+      <ul><li>Ithina pulls; response = ingress</li></ul>
+    </div>
+  </div>
+
+  <div class="arrow">&#9660; &#9660; &#9660; &#9660;</div>
+
+  <div class="box ithina">
+    <p class="box-title">Receiver</p>
+    <p class="box-sub">Containerized service, per channel</p>
+    <ul>
+      <li> <strong>User-initiated paths</strong> (Manual CSV upload via DIS UI): caller is already authenticated by Customer Master. Receiver accepts the upstream session token, asserts the authenticated <code>user_id</code> and <code>tenant_id</code>, does not re-verify.</li>
+      <li> <strong>Machine-driven paths</strong> (POS/ERP API push, webhooks, reverse-API responses): caller authenticates via API key or mTLS per tenant. <strong>Open question:</strong> machine auth may stay in DIS or move to Customer Master depending on Customer Master's scope. Currently DIS-internal.</li>
+      <li>Resolves <code>tenant_id</code>, <code>store_id</code> via Identity Service (resolution only; no token verification)</li>
+      <li>Generates <code>trace_id</code></li>
+    </ul>
+
+    <div class="option">
+      <span class="option-label">Pre-flight &middot; Option A (baseline)</span>
+      <div>Basic file checks: size, MIME, header row present</div>
+    </div>
+    <div class="option recommended">
+      <span class="option-label">Pre-flight &middot; Option B (recommended)</span><span class="new">NEW</span>
+      <div><strong>DuckDB pre-flight.</strong> <code>SELECT count(*), columns, null counts, type sniff FROM read_csv('gcs://...')</code>. Reject malformed CSVs at the boundary; attach stats to bronze row.</div>
+    </div>
+    <div class="option recommended">
+      <span class="option-label">Pre-flight &middot; Option C</span> <div><strong>PII redaction before bronze.</strong> Deterministic tokenisation of phone, email, loyalty_id, PAN, Aadhaar via per-tenant HMAC. Raw values land in a KMS-encrypted side bucket with restricted-SA access. Bronze and canonical never carry raw PII. Audit row per redaction: <code>(trace_id, field_name, token, redacted_at)</code>. DPDPA-aware default.</div>
+    </div>
+
+    <ul style="margin-top:8px">
+      <li>Writes raw payload &rarr; GCS (with PII redacted)</li>
+      <li>Writes enriched chunk row &rarr; Bronze Postgres (metadata-only index: <code>trace_id, tenant_id, store_id, source_id, gcs_uri, received_ts, status, byte_count, row_count_estimate, content_hash, mime_type</code>)</li>
+      <li>Publishes &rarr; Pub/Sub <code>ingress.ready</code></li>
+      <li>Returns 2xx (permissive accept)</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============== SOURCE ONBOARDING ============== -->
+<h2><span class="section-num">02</span>Source Onboarding &middot; assisted</h2>
+
+<div class="zone">
+  <span class="zone-label">Onboarding flow &middot; system proposes, human approves</span>
+
+  <div class="box ithina">
+    <p class="box-title">DIS UI &middot; Sample upload sub-module</p>
+    <p class="box-sub">Tenant or Ithina ops</p>
+    <ul>
+      <li>Operator (or tenant) uploads a sample file or payload from the source via the DIS UI</li>
+      <li>DIS UI calls the Onboarding Service backend, which stores the sample in GCS under an onboarding-staging path</li>
+    </ul>
+  </div>
+
+  <div class="arrow">&#9660;</div>
+
+  <div class="box accent">
+    <p class="box-title">Onboarding Service <span class="new">NEW</span></p>
+    <p class="box-sub">Containerized service + DuckDB</p>
+
+    <div class="option recommended">
+      <span class="option-label">Layer 1 &middot; Schema inference</span>
+      <div>DuckDB inspects the sample: <code>DESCRIBE SELECT * FROM read_csv('gcs://...')</code>. Returns inferred columns, types, null %, value distributions, example values.</div>
+    </div>
+
+    <div class="option recommended">
+      <span class="option-label">Layer 2 &middot; Mapping &amp; normalization suggestion</span>
+      <div>Match source columns to canonical columns using exact-name match, fuzzy string similarity, value-pattern heuristics, and historical mappings from similar source types. Also detect format variance from the sample: date format (e.g., <code>DD-MM-YYYY</code> inferred when first pair exceeds 12), decimal separator, boolean and null encodings, enum value sets, timezone (store-local default), units. Output: draft <code>field_map</code> + draft <code>transforms</code> + per-column confidence.</div>
+    </div>
+
+    <div class="option recommended">
+      <span class="option-label">Layer 3 &middot; Validation suggestion</span>
+      <div>Profile the sample, propose rules: not-null on always-populated columns, numeric range bounds from min/max, regex patterns from values. Output: <strong>two draft suites</strong>, source-shape (pre-mapping) and canonical-shape (post-mapping), versioned with the mapping.</div>
+    </div>
+  </div>
+
+  <div class="arrow">&#9660;</div>
+
+  <div class="box ithina">
+    <p class="box-title">DIS UI &middot; Onboarding review sub-module</p>
+    <p class="box-sub">Side-by-side, low-confidence highlighted</p>
+    <ul>
+      <li>Proposed mapping shown next to sample data; low-confidence rows highlighted</li>
+      <li>Operator overrides, adds transforms, declares column ownership (required for column-scoped merge)</li>
+      <li>Dry-run against the sample renders a canonical preview</li>
+      <li>Approve &rarr; writes to <code>config.source_mappings</code> with <code>status='staged'</code></li>
+    </ul>
+  </div>
+
+  <div class="arrow">&#9660;</div>
+
+  <div class="box storage">
+    <p class="box-title">Staged rollout &middot; shadow mode</p>
+    <p class="box-sub">Pipeline runs the staged mapping in parallel; writes to staging schema, not canonical</p>
+    <ul>
+      <li>Dataflow detects <code>status='staged'</code> and routes output to the <code>staging.*</code> schema instead of <code>canonical.*</code></li>
+      <li>Operator reviews shadow output via DIS UI's <em>Onboarding review</em> sub-module (promotion screen)</li>
+      <li>Approve &rarr; <code>status='active'</code>; previous active mapping moves to <code>deprecated</code></li>
+      <li>Reject &rarr; <code>status='deprecated'</code>; operator iterates a new version</li>
+      <li>Pipeline picks up the change at next side-input refresh (~30s)</li>
+    </ul>
+    <p class="caption">A bad mapping never touches production canonical data. Staging schema is RLS-enforced and is the only data surface affected during shadow rollout.</p>
+  </div>
+</div>
+
+<div class="zone">
+  <span class="zone-label">Suggestion quality &middot; cold-start vs accumulated corpus</span>
+  <div class="row">
+    <div class="box managed">
+      <p class="box-title">Rule-based (v0)</p>
+      <ul>
+        <li>~60-75% columns auto-matched for common source types</li>
+        <li>No corpus needed; ships day one</li>
+      </ul>
+    </div>
+    <div class="box managed">
+      <p class="box-title">+ Historical learning</p>
+      <ul>
+        <li>~75-85% as approved mappings accumulate</li>
+        <li>Trigger: after ~20 onboardings</li>
+      </ul>
+    </div>
+    <div class="box managed">
+      <p class="box-title">+ LLM-assisted (Vertex AI)</p>
+      <ul>
+        <li>~85-95% for unfamiliar schemas</li>
+        <li>Add only if onboarding throughput becomes a bottleneck</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<p style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--muted); margin: 16px 0 8px">
+  Once a mapping is <code>active</code>, the live data flow below uses it via the pipeline's side-input lookup.
+</p>
+<div class="connector">
+  <span class="connector-line"></span>
+  <span class="pill">resolve() / validate()</span>
+  <span class="connector-line"></span>
+</div>
+
+<div class="zone">
+  <span class="zone-label">Identity isolation</span>
+
+  <div class="identity-rail">
+    <div class="box ithina">
+      <p class="box-title">Tenant / Store Identity Service </p>
+      <p class="box-sub">Containerized service + cache; mediates access to physically separate admin DB</p>
+      <div style="margin-top: 8px; padding: 8px 10px; background: rgba(255,255,255,0.5); border: 1px dashed var(--ithina-border); border-radius: 2px; font-size: 12.5px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px;">Interface (gRPC or REST, internal-only)</div>
+        <ul style="margin: 0; padding-left: 16px; font-size: 12.5px;">
+          <li><code>resolve_from_authenticated_context(user_id, tenant_id)</code> &rarr; identity &middot; <span style="color: var(--muted)">user paths; tenant already authenticated by Customer Master, no token verification done here</span></li>
+          <li><code>resolve_from_upload(upload_id)</code> &rarr; identity &middot; <span style="color: var(--muted)">CSV upload paths (upload_id minted post-auth by DIS UI)</span></li>
+          <li><code>resolve_from_endpoint(cfg_id)</code> &rarr; identity &middot; <span style="color: var(--muted)">reverse-API puller; machine credentials, DIS-internal</span></li>
+          <li><code>resolve_from_machine_credential(api_key | mtls_cn)</code> &rarr; identity &middot; <span style="color: var(--muted)">POS/ERP push paths; machine auth, DIS-internal pending Customer Master scope</span></li>
+          <li><code>validate(tenant_id, store_id)</code> &rarr; bool &middot; <span style="color: var(--muted)">FK-substitute pre-check in the consumer</span></li>
+        </ul>
+      </div>
+      <div style="margin-top: 8px; padding: 8px 10px; background: var(--accent-soft); border: 1px solid var(--accent); border-radius: 2px; font-size: 12.5px;">
+        the <code>resolve_from_token(jwt)</code> interface is <strong>not</strong> part of the Identity Service. Token verification is Customer Master's job. Identity Service receives an already-authenticated context (user_id, tenant_id) and returns the data-plane identity (store_id, is_active, metadata).
+      </div>
+      <ul style="margin-top: 8px">
+        <li>Resolve returns <code>{tenant_id, store_id, +metadata}</code> from cache; miss falls through to admin DB</li>
+        <li>Publishes <code>identity.changed</code> on admin DB writes <em>(deferred; Customer Master does not yet emit — Mirror Sync uses DB-pull mode at launch)</em></li>
+        <li> <strong>Stale-while-error caching:</strong> on admin DB error, cache continues to serve entries up to 5 min stale. Bounded; counted and alerted.</li>
+        <li> <strong>Receiver-local fallback for <code>validate()</code>:</strong> the streaming consumer reads <code>identity_mirror</code> directly when Identity Service circuit-breaker is open. Resolve paths cannot fall back (machine credential lookup needs admin DB), but the cache covers steady state.</li>
+      </ul>
+    </div>
+
+    <div class="rail-flow">&#8594;</div>
+
+    <div class="box managed">
+      <p class="box-title">Mirror Sync Consumer</p>
+      <p class="box-sub">Containerized service &middot; two modes</p>
+      <ul>
+        <li>Maintains mirror tables in data-platform DB</li>
+        <li><strong>DB-pull mode (v1.0 launch):</strong> reads tenants/stores directly from Customer Master Postgres; on-demand + schedulable</li>
+        <li><strong>Pub/Sub subscriber (deferred):</strong> subscribes to <code>identity.changed</code>; activates when CM emits</li>
+        <li>Soft-delete via <code>is_active</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="arrow">&#9660; <span class="arrow-label">writes</span></div>
+
+  <div class="box storage">
+    <p class="box-title">Cloud SQL Postgres &middot; identity_mirror schema</p>
+    <ul>
+      <li><code>tenants(tenant_id, is_active)</code></li>
+      <li><code>stores(tenant_id, store_id, is_active)</code></li>
+    </ul>
+    <p class="caption">Canonical tables hold real Postgres FK references to these mirror tables. FK violation on insert &rarr; sink retries with backoff &rarr; quarantine on final failure.</p>
+  </div>
+</div>
+
+<!-- ============== PUB/SUB TRIGGER ============== -->
+<div class="connector">
+  <span class="connector-line"></span>
+  <span class="pill">Pub/Sub &middot; ingress.ready</span>
+  <span class="connector-line"></span>
+</div>
+<p style="text-align:center; font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:var(--muted); margin:4px 0 16px">
+  <code>{trace_id, tenant_id, store_id, source_id, bronze_ref, gcs_uri, received_ts}</code>
+</p>
+
+<!-- ============== MIDDLE ============== -->
+<h2><span class="section-num">03</span>Middle &middot; ELT</h2>
+
+<div class="zone">
+  <span class="zone-label">Streaming consumer </span>
+
+  <div class="box managed">
+    <p class="box-title">Streaming consumer &middot; containerised service</p>
+    <p class="box-sub">One service, multi-tenant, multi-source &middot; Pub/Sub pull subscription &middot; specific runtime is a deployment choice. See <code>decisions.md</code> D4 for higher-throughput migration trigger.</p>
+    <ol>
+      <li>Read Pub/Sub message</li>
+      <li>Fetch chunk (Bronze PG metadata + GCS payload)</li>
+      <li>Mapping lookup (<code>config.source_mappings</code>, in-process cache refreshed via <code>mapping.changed</code> Pub/Sub topic, 30s steady-state fallback)</li>
+      <li>Validate tenant/store via Identity Service <code>validate()</code> (with <code>identity_mirror</code> local fallback when circuit-breaker is open)</li>
+    </ol>
+
+    <div class="option recommended" style="margin-top:10px">
+      <span class="option-label">Step 5 &middot; Pre-mapping validation (source-shape) </span>
+      <div><strong>Pandera source-shape suite.</strong> DataFrame-native (Polars frames). Tenant-readable failure reasons ("expected column <code>item_code</code>, got <code>itemcd</code>"). Linked from DIS UI quarantine console. No compute wasted mapping a malformed chunk.</div>
+    </div>
+
+    <ol start="6" style="margin-top:10px">
+      <li>Apply mapping: <strong>rename, normalize, cast, derive</strong>. Normalize handles format variance (date formats, decimal separators, timezones, units, enums, boolean and null encodings, casing, whitespace) via declarative transforms in the mapping config, with a named-function escape hatch for source-specific quirks the vocabulary cannot express. Normalization failures route to quarantine with a distinct "normalization failed" reason.</li>
+    </ol>
+
+    <div class="option recommended" style="margin-top:10px">
+      <span class="option-label">Step 7 &middot; Post-mapping validation (canonical-shape) </span>
+      <div><strong>Pandera canonical-shape suite.</strong> Versioned per <code>(tenant_id, source_id, version)</code>. Per-row pass/fail. Failure context links from DIS UI quarantine console show which check failed. Custom checks (cross-field invariants, conditional rules) authored as <code>@pa.dataframe_check</code> functions.</div>
+    </div>
+
+    <ol start="8" style="margin-top:10px">
+      <li><strong>Circuit-breaker on Cloud SQL health </strong>: probe <code>SELECT 1</code> with 100ms timeout before each batch. Unhealthy: route batch to <code>pipeline.dlq</code> Pub/Sub topic; receivers start returning 503 + Retry-After when DLQ depth exceeds threshold.</li>
+      <li>Branch: valid &rarr; sinks &middot; invalid &rarr; quarantine</li>
+      <li>Emit audit event per stage &rarr; BigQuery</li>
+    </ol>
+
+    <div class="option" style="margin-top:10px; background: rgba(212, 160, 23, 0.05); border-left-color: var(--new-border)">
+      <span class="option-label">Compute platform</span>
+      <div>At beta scale (~150K events/day, ~1.7 events/sec average) the streaming consumer fits on a minimal containerised service with Pub/Sub pull. Transformation logic is factored as pure functions over <code>(mapping, raw_row) &rarr; canonical_row</code>; migration to a higher-throughput runtime later is a runner swap, not a rewrite. Migration trigger: sustained 500+ rows/sec for 7 consecutive days. See <code>decisions.md</code> D4.</div>
+    </div>
+  </div>
+
+  <div class="arrow">&#9660; &#9660; &#9660;</div>
+
+  <div class="sinks">
+    <div class="box storage">
+      <p class="box-title">Cloud SQL Postgres &middot; canonical sink</p>
+      <p class="box-sub">RLS enforced, no BYPASSRLS</p>
+      <p style="font-size:13.5px; margin:6px 0 0">
+        Sink batches rows by <code>tenant_id</code>, opens transaction, runs <code>SET LOCAL app.tenant_id = '...'</code>, executes merge upsert + history append, commits.
+      </p>
+
+      <div class="schemas">
+        <div class="schema">
+          <span class="schema-name">canonical &middot; hot tables (RLS)</span>
+          <ul>
+            <li><code>current_store_positions</code> &middot; key <code>(tenant_id, store_id, sku_id)</code></li>
+            <li>2-3 sibling hot tables (events, store-context state)</li>
+            <li>Column-scoped merge; event-time wins</li>
+          </ul>
+        </div>
+        <div class="schema">
+          <span class="schema-name">canonical &middot; event tables (RLS, append-only)</span>
+          <ul>
+            <li><code>store_sku_sale_events</code>, <code>store_sku_change_events</code></li>
+            <li>Strictly append-only; no UNIQUE constraint. Corrections from sources written as separate rows.</li>
+            <li>Dedup key for "same source event": <code>(tenant_id, store_id, source_id, source_event_id)</code></li>
+            <li>Latest-wins at <strong>read time</strong> via window function; reports and dbt views filter to latest. See <code>decisions.md</code> D33.</li>
+            <li>Partitioned by <code>event_date</code>; 35-day Cloud SQL retention (configurable)</li>
+            <li>FK &rarr; <code>identity_mirror.stores</code>, <code>identity_mirror.tenants</code></li>
+            <li>Daily Cloud SQL &rarr; BigQuery copy from day 1; partition drop only after retention window</li>
+          </ul>
+        </div>
+        <div class="schema">
+          <span class="schema-name">canonical &middot; signal history (RLS)</span>
+          <ul>
+            <li><code>store_sku_signal_history</code> &middot; one row per SKU per <code>as_of_date</code></li>
+            <li>Append-only; written by daily-compute job; 35-day retention</li>
+          </ul>
+        </div>
+        <div class="schema">
+          <span class="schema-name">config schema</span>
+          <ul>
+            <li><code>source_mappings</code> (versioned, per tenant+source; <code>status</code>: staged / active / deprecated)</li>
+            <li><code>expectation_suite_refs</code> <span class="new">NEW</span></li>
+          </ul>
+        </div>
+        <div class="schema">
+          <span class="schema-name">staging schema (RLS) <span class="new">NEW</span></span>
+          <ul>
+            <li>Mirror of canonical hot + history tables</li>
+            <li>Receives output from <code>staged</code> mappings during shadow rollout</li>
+            <li>Inspected by operator before promotion to <code>active</code></li>
+          </ul>
+        </div>
+        <div class="schema">
+          <span class="schema-name">quarantine schema (RLS)</span>
+          <ul>
+            <li><code>quarantined_rows</code>, <code>quarantined_chunks</code></li>
+            <li> <code>parent_trace_id</code> column for resubmit lineage</li>
+          </ul>
+        </div>
+        <div class="schema">
+          <span class="schema-name">pii_tokens schema (restricted) </span>
+          <ul>
+            <li>Token-to-ciphertext mapping; KMS-encrypted at rest</li>
+            <li>Service-account access only; no tenant RLS exposure</li>
+            <li>Right-to-erasure deletes ciphertext, retains tombstone</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="box managed">
+      <p class="box-title">Pub/Sub &middot; quarantine + DLQ </p>
+      <p class="box-sub">Failed rows + unhealthy-downstream backpressure</p>
+      <div class="arrow" style="margin-top:6px">&#9660;</div>
+      <div style="background:rgba(255,255,255,0.5); border:1px dashed var(--managed-border); padding:8px 10px; border-radius:2px; font-size:13px">
+        <strong><code>quarantine</code></strong>: validation failures &rarr; drainer &rarr; Cloud SQL quarantine schema &rarr; DIS UI<br>
+        <strong><code>pipeline.dlq</code></strong> : routed when Cloud SQL is unhealthy. Replayed every 60s when health probe restores.<br>
+        <strong>Pub/Sub deadletter</strong>: messages exceeding retry count. Alert on non-empty.
+      </div>
+    </div>
+
+    <div class="box bq">
+      <p class="box-title">Audit &middot; audit.events</p>
+      <p class="box-sub">Cloud SQL in Phase 1; BigQuery archive in Phase 3</p>
+      <ul>
+        <li>One row per (trace_id, stage)</li>
+        <li>Postgres partition by date (Phase 1); BQ partition by date + cluster by <code>trace_id</code>, <code>tenant_id</code> (Phase 3 archive)</li>
+        <li>Debug: <code>SELECT * WHERE trace_id = '...'</code></li>
+        <li> Latency SLO computed from <code>commit_ts - received_ts</code> per (tenant, source). Targets: <strong>p50 &lt; 3s, p95 &lt; 8s, p99 &lt; 15s</strong>. Error budget 5% of p95 in 30-day window.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============== QUARANTINE RESUBMIT ============== -->
+<div class="zone">
+  <span class="zone-label">Quarantine resubmit loop </span>
+
+  <div class="box ithina">
+    <p class="box-title">Resubmit mechanics</p>
+    <p class="box-sub">Two types, lineage-preserved, rate-limited</p>
+
+    <div class="option recommended">
+      <span class="option-label">Type A &middot; Replay (mapping was fixed)</span>
+      <div>Tenant or ops clicks "replay" in DIS UI quarantine console. Original GCS payload is re-published to <code>ingress.resubmit</code> Pub/Sub topic. New <code>trace_id</code> with <code>parent_trace_id</code> linking to original. <strong>Skips DuckDB pre-flight</strong> (chunk already structurally validated). Re-runs against currently active mapping. Outcome appended to audit lineage.</div>
+    </div>
+
+    <div class="option recommended">
+      <span class="option-label">Type B &middot; Fixed file (new payload)</span>
+      <div>Tenant uploads a corrected file via DIS UI. Treated as a fresh ingress: full pipeline including DuckDB pre-flight, PII redaction, bronze write. Original <code>trace_id</code> linked via <code>parent_trace_id</code> in the new bronze row. Original quarantine row marked <code>resolved_by_resubmit</code>.</div>
+    </div>
+
+    <ul style="margin-top:10px">
+      <li><strong>Rate limit:</strong> per tenant, max 100 resubmits per hour. Prevents accidental loops if a mapping is still broken.</li>
+      <li><strong>Resubmit-of-resubmit cap:</strong> chain depth max 3. Beyond that, ops must investigate.</li>
+      <li><strong>Visibility:</strong> DIS UI shows full lineage (original &rarr; resubmits &rarr; resolution) by walking <code>parent_trace_id</code>.</li>
+      <li><strong>Pub/Sub topic separation:</strong> <code>ingress.resubmit</code> is distinct from <code>ingress.ready</code> so backpressure and metrics are observable independently.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============== DIS UI ============== -->
+<div class="zone">
+  <span class="zone-label">DIS UI &middot; single containerized service</span>
+
+  <div class="box ithina">
+    <p class="box-title">DIS UI (Data Integration System UI)</p>
+    <p class="box-sub">One container; sub-modules share auth, session, navigation; backend services are headless and called by the UI</p>
+
+    <div style="margin-top: 10px; padding: 10px 12px; background: var(--answered-bg); border: 1px solid var(--answered-border); border-left-width: 4px; border-radius: 3px; font-size: 12.5px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; color: #1f4a1f; text-transform: uppercase; margin-bottom: 4px;">Flag &middot; module breakdown mismatch</div>
+      <div>The sub-modules listed below are <strong>architectural intent</strong>. The as-built DIS frontend has a different breakdown. A gap analysis is pending the actual module list from the frontend team. Do not treat the cells below as a description of what is in the shipped UI; treat them as the functional surfaces the architecture assumes are present, which may map to different screens or different module names in reality.</div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Auth (delegated to Customer Master)</div>
+        <div style="font-size: 12.5px;">No own login flow. DIS UI accepts session/token from Customer Master (Auth0-mediated). RBAC enforcement at Customer Master; DIS trusts decisions and does not re-check. <strong>Frontend integration status:</strong> delivered. The remaining open seam is between DIS backend services and Customer Master (contract for trusting the propagated auth context).</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Sample upload</div>
+        <div style="font-size: 12.5px;">Front-end for source onboarding. Uploads sample file/payload to Onboarding Service backend.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Onboarding review</div>
+        <div style="font-size: 12.5px;">Side-by-side mapping + sample. Operator overrides, dry-runs, approves to <code>staged</code>. Hosts shadow rollout promotion.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Mapping config CRUD</div>
+        <div style="font-size: 12.5px;">View, edit (new version), deprecate <code>source_mappings</code>. Version history.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Quarantine console</div>
+        <div style="font-size: 12.5px;">Tenant slice: own quarantined rows + resubmit. Ops slice: cross-tenant view, replay, mark resolved. Suite failure docs link (when GE/Pandera).</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Audit / trace lookup</div>
+        <div style="font-size: 12.5px;">Search Cloud SQL <code>audit.events</code> by <code>trace_id</code>, tenant, store, time range (Phase 1). BigQuery archive in Phase 3.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px; grid-column: span 2;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">DuckDB query panel (ops only) <span class="new">NEW</span></div>
+        <div style="font-size: 12.5px;">Operator pastes GCS bronze URI + SQL; backend runs DuckDB in-process and returns results. Debugging without spinning up Beam or loading to BigQuery.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============== DIS-API ============== -->
+<div class="zone">
+  <span class="zone-label">DIS-API &middot; backend-for-frontend (BFF) </span>
+
+  <div class="box ithina">
+    <p class="box-title">dis-ui-server (containerized service)</p>
+    <p class="box-sub">Single HTTP/REST backend for DIS UI. Per-sub-module handlers; one auth integration with Customer Master; one URL the UI calls.</p>
+
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;">
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Auth handler</div>
+        <div style="font-size: 12.5px;">Validates session tokens against Customer Master. Scopes every request by <code>tenant_id</code> from the auth context. Other backends do not authenticate UI users.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Sample upload handler</div>
+        <div style="font-size: 12.5px;">Accepts file/payload upload from DIS UI; stores in GCS onboarding-staging path; delegates schema inference + mapping suggestion to the Onboarding Service backend.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Onboarding review handler</div>
+        <div style="font-size: 12.5px;">Reads/writes mapping drafts in <code>config.source_mappings</code> (<code>status='staged'</code>). Coordinates staged &rarr; active promotion via Onboarding Service.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Mapping CRUD handler</div>
+        <div style="font-size: 12.5px;">View, edit (new version), deprecate <code>source_mappings</code> rows. Version history. The only write surface to <code>config</code> from the UI path.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Quarantine handler</div>
+        <div style="font-size: 12.5px;">Reads <code>quarantine.*</code> tables. Tenant slice (own rows + resubmit). Ops slice (cross-tenant view, replay, mark resolved). Triggers Ithina-side replay via <code>ingress.resubmit</code> Pub/Sub.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">Audit handler</div>
+        <div style="font-size: 12.5px;">Queries Cloud SQL <code>audit.events</code> by <code>trace_id</code>, tenant, store, time range. Read-only. BigQuery archive becomes a secondary read source in Phase 3.</div>
+      </div>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--ithina-border); border-radius: 2px; padding: 8px 10px; grid-column: span 2;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.04em; color: var(--ithina-border); text-transform: uppercase; margin-bottom: 4px;">DuckDB query handler (ops only)</div>
+        <div style="font-size: 12.5px;">Operator pastes GCS bronze URI + SQL; runs in-process via DuckDB. Restricted to ops-role auth claims. Same engine choice as receivers (consistent failure modes).</div>
+      </div>
+    </div>
+
+    <div style="margin-top: 12px; padding: 10px 12px; background: rgba(255,255,255,0.5); border: 1px dashed var(--ithina-border); border-radius: 2px; font-size: 12.5px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 11px; font-weight: 600; letter-spacing: 0.05em; color: var(--muted); text-transform: uppercase; margin-bottom: 4px;">Data access posture</div>
+      <ul style="margin: 0; padding-left: 18px;">
+        <li><strong>Reads from:</strong> Cloud SQL read replica (canonical hot tables for inspection), <code>config</code> schema, <code>quarantine</code> schema, <code>audit</code> schema (Phase 1; BigQuery audit becomes a read source in Phase 3).</li>
+        <li><strong>Writes to:</strong> <code>config.source_mappings</code> via mapping CRUD only. Never writes to canonical, history, identity_mirror, or bronze.</li>
+        <li><strong>Calls:</strong> Onboarding Service (sample inference, promotion coordination). Does not call Identity Service for auth (Customer Master owns user auth).</li>
+        <li><strong>Auth posture:</strong> trusts Customer Master tokens. Validates signature and claims; does not re-resolve identity.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============== ELT OUTPUTS ============== -->
+<div class="zone">
+  <span class="zone-label">ELT outputs &middot; how Beam writes to its sinks</span>
+
+  <div class="row">
+    <div class="box storage" style="flex: 2">
+      <p class="box-title">Valid rows &rarr; canonical (single transaction)</p>
+      <p class="box-sub">Batched by <code>tenant_id</code>, ~500 rows per transaction</p>
+      <div style="background: rgba(255,255,255,0.6); border: 1px dashed var(--storage-border); border-radius: 2px; padding: 8px 10px; margin-top: 8px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; line-height: 1.5;">
+        BEGIN<br>
+        SET LOCAL app.tenant_id = '&lt;id&gt;'<br>
+        <br>
+        -- hot upsert (event-time conditional):<br>
+        INSERT INTO canonical.&lt;hot&gt; ...<br>
+        ON CONFLICT (tenant_id, store_id, sku_id)<br>
+        &nbsp;&nbsp;DO UPDATE SET ...<br>
+        &nbsp;&nbsp;WHERE incoming.event_ts &gt; existing.ts<br>
+        <br>
+        -- history append:<br>
+        INSERT INTO canonical.&lt;hist&gt; ...<br>
+        <br>
+        COMMIT
+      </div>
+      <p class="caption" style="margin-top: 8px">Hot and history land atomically. FK to <code>identity_mirror</code> enforced. FK failure &rarr; retry with backoff &rarr; quarantine as last resort.</p>
+    </div>
+
+    <div class="box managed">
+      <p class="box-title">Invalid rows &rarr; quarantine</p>
+      <p class="box-sub">At-least-once</p>
+      <ul>
+        <li>Per-row (post-mapping fail) or per-chunk (pre-mapping fail)</li>
+        <li>Published to <code>quarantine</code> Pub/Sub topic</li>
+        <li>Drainer (containerized service) writes to Cloud SQL quarantine table</li>
+        <li>Idempotent on <code>trace_id</code> + <code>row_hash</code></li>
+        <li>DIS UI quarantine console reads from the table</li>
+      </ul>
+    </div>
+
+    <div class="box bq">
+      <p class="box-title">Audit &rarr; BigQuery (always)</p>
+      <p class="box-sub">Per stage, per row; not gated by valid/invalid</p>
+      <ul>
+        <li>Streaming insert, bundled</li>
+        <li>Partition by date, cluster by <code>trace_id</code>, <code>tenant_id</code></li>
+        <li>Audit emission failure never blocks canonical writes</li>
+        <li>Gaps re-emittable from bronze on demand</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="caption" style="margin-top: 12px">
+    <strong>BigQuery <code>canonical_history</code> is NOT written by the streaming pipeline.</strong> It is loaded nightly by the batch job (see &sect;04) from the Cloud SQL history slice. This keeps the hot-path latency budget free of BQ write variance.
+  </p>
+</div>
+
+<!-- ============== COLD PATH ============== -->
+<h2><span class="section-num">04</span>Cold path &middot; Analytics offload</h2>
+
+<div class="zone">
+  <span class="zone-label">Nightly &middot; retail off-hours</span>
+
+  <div class="box managed">
+    <p class="box-title">Cloud Scheduler &rarr; Containerized job</p>
+    <p class="box-sub">Idempotent, watermark-driven</p>
+
+    <div class="option recommended">
+      <span class="option-label">Steps </span>
+      <ul>
+        <li>Run <strong>Pandera</strong> suite on the slice before BQ load (canonical-shape, batch variant)</li>
+        <li>On suite failure: hold the load, alert ops, do not proceed</li>
+        <li>Load yesterday's history slice &rarr; BigQuery <code>canonical_history.*</code></li>
+        <li><strong>dbt run</strong> to refresh derived BQ models (aggregates, denormalised tables for analytics consumers)</li>
+        <li><strong>dbt test</strong> with <code>dbt-expectations</code>: freshness, RI, completeness on canonical_history</li>
+        <li>Delete rows with <code>event_ts &lt; now() - 3 months</code> from Cloud SQL (batched)</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="arrow">&#9660;</div>
+
+  <div class="box bq">
+    <p class="box-title">BigQuery &middot; canonical_history.*</p>
+    <p class="box-sub">Full retention, analytics-grade, dbt-modeled</p>
+    <ul>
+      <li>Partition by <code>event_ts</code>, cluster by <code>tenant_id</code></li>
+      <li>Analytics consumers, BI tools, ML feature pipelines</li>
+      <li> Schema evolution managed by Alembic migrations. New canonical columns: Alembic adds with default, backfills from history, mapping configs updated to populate.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ============== EGRESS ============== -->
+<h2><span class="section-num">05</span>Egress &middot; Consumers</h2>
+
+<div class="zone">
+  <span class="zone-label">Read paths</span>
+  <div class="row">
+    <div class="box storage">
+      <p class="box-title">Cloud SQL primary</p>
+      <ul>
+        <li>Hot reads for Ithina product, tenant UI served from primary at current scale</li>
+        <li>RLS enforced</li>
+        <li>Read replica promoted when first paying-tenant SLA contract requires it, or when read load exceeds 60% of primary capacity</li>
+      </ul>
+    </div>
+    <div class="box bq">
+      <p class="box-title">BigQuery</p>
+      <ul><li>Analytics, BI tools, ML, reports</li></ul>
+    </div>
+    <div class="box bq">
+      <p class="box-title">Audit console</p>
+      <ul><li>Engineer-facing debug by <code>trace_id</code></li></ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============== COST ============== -->
+<h2><span class="section-num">06</span>Legend</h2>
+
+<div class="legend">
+  <div class="legend-item"><span class="swatch ithina"></span>Ithina-owned code (containerized service)</div>
+  <div class="legend-item"><span class="swatch managed"></span>GCP managed runtime (Pub/Sub, Scheduler, container runtime)</div>
+  <div class="legend-item"><span class="swatch storage"></span>Cloud SQL Postgres</div>
+  <div class="legend-item"><span class="swatch bq"></span>BigQuery</div>
+  <div class="legend-item"><span class="swatch new"></span>Recommended addition (DuckDB, Pandera)</div>
+  <div class="legend-item"><span style="display:inline-block;width:16px;height:16px;background:var(--revised-bg);border:1px solid var(--revised-border);border-radius:2px"></span>Revision marker</div>
+  <div class="legend-item"><span style="display:inline-block;width:16px;height:16px;background:var(--deferred-bg);border:1px solid var(--deferred-border);border-radius:2px"></span>Deferred (build later, defined trigger)</div>
+</div>
+
+<footer>
+  <span>DIS &middot; ITHINA DATA PLATFORM &middot; ARCHITECTURE</span>
+</footer>
+
+</div>
+
+</body>
+</html>

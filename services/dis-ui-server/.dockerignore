@@ -1,0 +1,13 @@
+# The canonical build runs from the REPO ROOT with explicit COPYs (see
+# Dockerfile header), which is what actually bounds the image contents. This
+# file exists per the service-directory convention and covers BuildKit's
+# per-Dockerfile ignore lookup; patterns mirror what must never enter an image.
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+tests/
+.env
+.env.*

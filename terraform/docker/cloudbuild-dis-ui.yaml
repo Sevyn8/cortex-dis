@@ -1,0 +1,67 @@
+# Cloud Build: build + push the dis-ui SPA image, correctly and reproducibly.
+#
+# Run from the REPO ROOT:
+#   gcloud builds submit --config terraform/docker/cloudbuild-dis-ui.yaml \
+#     --substitutions=SHORT_SHA=<sha>,_STUB_TOKEN_TENANT=<tok>,_STUB_TOKEN_OPS=<tok> .
+#
+# ROOT CAUSE this config fixes: the dis-ui Dockerfile's COPYs (package.json,
+# pnpm-lock.yaml, then `COPY . .`) are CONTEXT-relative, and those files live ONLY at
+# services/dis-ui (not the repo root). The build context MUST therefore be
+# services/dis-ui. Earlier deploy builds used the repo-root context; a cached build
+# then silently reused a stale compiled-bundle layer, baking the SAME old JS chunk into
+# every freshly-tagged image (so retirement / dashboard / quarantine work never reached
+# the browser). Here: context = services/dis-ui, -f is repo-root-relative, and
+# --no-cache guarantees `vite build` recompiles the current source every time.
+#
+# Vite vars are BUILD-TIME (baked into the static bundle; a runtime Cloud Run env does
+# nothing for an already-built SPA): MODE=real makes the UI call dis-ui-server;
+# BASE_URL is the deployed dis-ui-server; the two STUB_TOKEN vars are the staging
+# dev-login persona tokens (secrets, passed at submit time, never committed).
+
+substitutions:
+  _REGION: "asia-south1"
+  _REPO: "dis-images"
+  # This is THE staging dis-ui build, so default to real + the known base URL (a plain
+  # build is never accidentally fixture-real here). Override only if needed.
+  _DIS_UI_SERVER_MODE: "real"
+  _DIS_UI_SERVER_BASE_URL: "https://dis-ui-server-mmquodovja-el.a.run.app"
+  # Secrets: pass at submit time. Empty default just means the dev-login personas are
+  # not pre-filled; it never affects app correctness.
+  _STUB_TOKEN_TENANT: ""
+  _STUB_TOKEN_OPS: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # Context = services/dis-ui (the frontend package root, where the Dockerfile's COPYs
+  # resolve). -f is relative to the uploaded source root (/workspace = repo root).
+  # --no-cache: this image silently shipped a stale bundle when built wrong; force a
+  # fresh recompile every build (a ~1-2 min cost for a guarantee that burned us).
+  # DOCKER_BUILDKIT=1 is REQUIRED: the dis-ui Dockerfile uses a `# syntax=` directive
+  # and a heredoc `COPY <<NGINX` for the nginx config, which the classic builder cannot
+  # parse (it errors "unknown instruction: SERVER" on the nginx `server {` block).
+  - name: gcr.io/cloud-builders/docker
+    env: ['DOCKER_BUILDKIT=1']
+    args:
+      - build
+      - -f
+      - terraform/docker/dis-ui.Dockerfile
+      - --no-cache
+      - --build-arg
+      - VITE_DIS_UI_SERVER_MODE=${_DIS_UI_SERVER_MODE}
+      - --build-arg
+      - VITE_DIS_UI_SERVER_BASE_URL=${_DIS_UI_SERVER_BASE_URL}
+      - --build-arg
+      - VITE_STUB_TOKEN_TENANT=${_STUB_TOKEN_TENANT}
+      - --build-arg
+      - VITE_STUB_TOKEN_OPS=${_STUB_TOKEN_OPS}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui:$SHORT_SHA
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui:latest
+      - services/dis-ui
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui:$SHORT_SHA
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/dis-ui:latest

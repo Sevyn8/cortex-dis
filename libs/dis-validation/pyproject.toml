@@ -1,0 +1,28 @@
+[project]
+name = "dis-validation"
+version = "0.0.0"
+description = "DIS validation suites: Pandera source-shape (pre-mapping) and canonical-shape (post-mapping) suites over Polars frames, plus the column-provenance registry and drift guard (slice-05; D4a, D18, D21)."
+requires-python = ">=3.12"
+dependencies = [
+  # Errors (DisError root), structured logging adapter.
+  "dis-core",
+  # The canonical models the canonical-shape suite derives from (single source of
+  # canonical shape; slice-05 OQ7).
+  "dis-canonical",
+  # Validation engine (D4a / D21). PINNED: do NOT upgrade without re-testing all
+  # tenant suites (lib CLAUDE.md rule); lockfile resolves 0.31.1.
+  "pandera[polars]>=0.31,<0.32",
+  # SAME pin as dis-mapping (compatible range around the lockfile-resolved 1.41.2)
+  # so the two libs cannot resolve to different Polars versions; dtype behaviour
+  # (esp. Decimal) must not drift. PyArrow is deliberately NOT a direct dependency.
+  "polars>=1.41,<2.0",
+  # Suite definition models.
+  "pydantic>=2.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dis_validation"]

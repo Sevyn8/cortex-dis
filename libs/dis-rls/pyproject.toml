@@ -1,0 +1,20 @@
+[project]
+name = "dis-rls"
+version = "0.0.0"
+description = "DIS RLS-aware async Postgres session helper. Opens a per-tenant scoped transaction (SET LOCAL app.tenant_id) so canonical reads/writes are tenant-isolated (root CLAUDE.md hard rules 1 & 12)."
+requires-python = ">=3.12"
+dependencies = [
+  # DisError root + structured logging + UUIDv7 identifiers.
+  "dis-core",
+  # Async engine + connection; the existing POSTGRES_URL uses the psycopg (v3) driver,
+  # which supports async — no asyncpg needed.
+  "sqlalchemy[asyncio]>=2.0.36",
+  "psycopg[binary]>=3.2",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dis_rls"]

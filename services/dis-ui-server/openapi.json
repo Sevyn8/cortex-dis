@@ -1,0 +1,1014 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "dis-ui-server",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/healthz": {
+      "get": {
+        "summary": "Healthz",
+        "description": "Unauthenticated, DB-free liveness.",
+        "operationId": "healthz_healthz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Healthz Healthz Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readyz",
+        "description": "Readiness: a tenant-scoped dis-rls session opens and a scoped query runs.",
+        "operationId": "readyz_readyz_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/stores-onboarded": {
+      "get": {
+        "summary": "Get Stores Onboarded",
+        "description": "The tenant's onboarded stores, stable order (name, store_id); bare array.",
+        "operationId": "get_stores_onboarded_api_v1_stores_onboarded_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OnboardedStore"
+                  },
+                  "type": "array",
+                  "title": "Response Get Stores Onboarded Api V1 Stores Onboarded Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/template-mapping-fields": {
+      "get": {
+        "summary": "Get Template Mapping Fields",
+        "description": "The catalog, stable order (section, then canonical declaration order); bare array.",
+        "operationId": "get_template_mapping_fields_api_v1_template_mapping_fields_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/TemplateMappingField"
+                  },
+                  "type": "array",
+                  "title": "Response Get Template Mapping Fields Api V1 Template Mapping Fields Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mapping-templates": {
+      "get": {
+        "summary": "List Mapping Templates",
+        "description": "The tenant's templates (lineage summaries), order (source_id, template_name).",
+        "operationId": "list_mapping_templates_api_v1_mapping_templates_get",
+        "parameters": [
+          {
+            "name": "source_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Source Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MappingTemplate"
+                  },
+                  "title": "Response List Mapping Templates Api V1 Mapping Templates Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create Mapping Template",
+        "description": "Create a template: mint the UUIDv7 ``template_id``, write its v1 DRAFT.\n\nThe rules document passes the full four-step gate (D49 shape, non-empty\nrename, exactly-one-model routing, mandatory coverage) BEFORE any write; the\nstored JSONB is the validated model's dump, byte-aligned with what reads\nserve. A duplicate ``template_name`` is a clean 409, never a 500.",
+        "operationId": "create_mapping_template_api_v1_mapping_templates_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MappingTemplateCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingTemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/mapping-templates/{template_id}": {
+      "get": {
+        "summary": "Get Mapping Template",
+        "description": "One template with its full version lineage; 404 throw-style when invisible.",
+        "operationId": "get_mapping_template_api_v1_mapping_templates__template_id__get",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingTemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Patch Mapping Template",
+        "description": "Edit a template per the D17 lifecycle (see the repo's recorded semantics).",
+        "operationId": "patch_mapping_template_api_v1_mapping_templates__template_id__patch",
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MappingTemplatePatch"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MappingTemplateDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/csv-uploads": {
+      "post": {
+        "summary": "Upload Csv",
+        "description": "One synchronous upload: multipart ``file`` + ``template_id`` + ``store_code``.",
+        "operationId": "upload_csv_api_v1_csv_uploads_post",
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CsvUploadResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CastSpec": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "string",
+              "integer",
+              "decimal",
+              "date",
+              "datetime",
+              "boolean"
+            ],
+            "title": "Type"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "scale": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "CastSpec",
+        "description": "Target type for the cast sub-stage. ``decimal`` requires declared precision/scale."
+      },
+      "CsvUploadResult": {
+        "properties": {
+          "trace_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Trace Id"
+          },
+          "upload_id": {
+            "type": "string",
+            "title": "Upload Id"
+          },
+          "tenant_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Tenant Id"
+          },
+          "store_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Store Id"
+          },
+          "store_code": {
+            "type": "string",
+            "title": "Store Code"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "template_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Template Id"
+          },
+          "gcs_uri": {
+            "type": "string",
+            "title": "Gcs Uri"
+          },
+          "row_count": {
+            "type": "integer",
+            "title": "Row Count"
+          },
+          "received_ts": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received Ts"
+          },
+          "status": {
+            "type": "string",
+            "const": "received",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trace_id",
+          "upload_id",
+          "tenant_id",
+          "store_id",
+          "store_code",
+          "source_id",
+          "template_id",
+          "gcs_uri",
+          "row_count",
+          "received_ts",
+          "status"
+        ],
+        "title": "CsvUploadResult",
+        "description": "The 201 body: the accepted upload's resolved identity and pointers."
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MappingTemplate": {
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "title": "Template Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "template_name": {
+            "type": "string",
+            "title": "Template Name"
+          },
+          "latest_version": {
+            "type": "integer",
+            "title": "Latest Version"
+          },
+          "active_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
+          },
+          "staged_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staged Version"
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Version"
+          },
+          "versions_count": {
+            "type": "integer",
+            "title": "Versions Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "latest_version_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Latest Version Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_id",
+          "source_id",
+          "template_name",
+          "latest_version",
+          "active_version",
+          "staged_version",
+          "draft_version",
+          "versions_count",
+          "created_at",
+          "latest_version_created_at"
+        ],
+        "title": "MappingTemplate",
+        "description": "Lineage summary — one list entry per template."
+      },
+      "MappingTemplateCreate": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]{1,128}$",
+            "title": "Source Id"
+          },
+          "template_name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Template Name"
+          },
+          "mapping_rules": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Mapping Rules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "template_name",
+          "mapping_rules"
+        ],
+        "title": "MappingTemplateCreate",
+        "description": "``POST /mapping-templates`` body. v1 is hand-authored: the operator supplies\nthe ``source_id`` (validated well-formed only — no source registry exists, a\ndeliberate slice limit) and the full D49 rules document."
+      },
+      "MappingTemplateDetail": {
+        "properties": {
+          "template_id": {
+            "type": "string",
+            "title": "Template Id"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "template_name": {
+            "type": "string",
+            "title": "Template Name"
+          },
+          "latest_version": {
+            "type": "integer",
+            "title": "Latest Version"
+          },
+          "active_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Version"
+          },
+          "staged_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Staged Version"
+          },
+          "draft_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Draft Version"
+          },
+          "versions_count": {
+            "type": "integer",
+            "title": "Versions Count"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "latest_version_created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Latest Version Created At"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/MappingTemplateVersion"
+            },
+            "type": "array",
+            "title": "Versions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "template_id",
+          "source_id",
+          "template_name",
+          "latest_version",
+          "active_version",
+          "staged_version",
+          "draft_version",
+          "versions_count",
+          "created_at",
+          "latest_version_created_at",
+          "versions"
+        ],
+        "title": "MappingTemplateDetail",
+        "description": "The template with its full version lineage (version desc, DRAFT + DEPRECATED included)."
+      },
+      "MappingTemplatePatch": {
+        "properties": {
+          "template_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Template Name"
+          },
+          "mapping_rules": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mapping Rules"
+          }
+        },
+        "type": "object",
+        "title": "MappingTemplatePatch",
+        "description": "``PATCH /mapping-templates/{template_id}`` body — at least one field present.\n\n``template_name`` renames the LINEAGE (all version rows; D17 immutability\ncovers version content, not the lineage label). ``mapping_rules`` edits the\nDRAFT in place, or mints a new DRAFT version chained to the STAGED/ACTIVE\nhead when none exists."
+      },
+      "MappingTemplateVersion": {
+        "properties": {
+          "mapping_version_id": {
+            "type": "integer",
+            "title": "Mapping Version Id"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "staged",
+              "active",
+              "deprecated"
+            ],
+            "title": "Status"
+          },
+          "mapping_rules": {
+            "$ref": "#/components/schemas/SourceMapping"
+          },
+          "field_count": {
+            "type": "integer",
+            "title": "Field Count"
+          },
+          "transform_count": {
+            "type": "integer",
+            "title": "Transform Count"
+          },
+          "predecessor_version_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predecessor Version Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "created_by_user_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created By User Id"
+          },
+          "activated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activated At"
+          },
+          "deprecated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deprecated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "mapping_version_id",
+          "version",
+          "status",
+          "mapping_rules",
+          "field_count",
+          "transform_count",
+          "predecessor_version_id",
+          "created_at",
+          "created_by_user_id",
+          "activated_at",
+          "deprecated_at"
+        ],
+        "title": "MappingTemplateVersion",
+        "description": "One version row of the lineage, rules served raw (D49)."
+      },
+      "OnboardedStore": {
+        "properties": {
+          "store_id": {
+            "type": "string",
+            "title": "Store Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "store_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Store Code"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "opening",
+              "active",
+              "inactive",
+              "closed"
+            ],
+            "title": "Status"
+          },
+          "country": {
+            "type": "string",
+            "title": "Country"
+          },
+          "timezone": {
+            "type": "string",
+            "title": "Timezone"
+          },
+          "currency": {
+            "type": "string",
+            "title": "Currency"
+          },
+          "tax_treatment": {
+            "type": "string",
+            "enum": [
+              "inclusive",
+              "exclusive"
+            ],
+            "title": "Tax Treatment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "store_id",
+          "name",
+          "store_code",
+          "status",
+          "country",
+          "timezone",
+          "currency",
+          "tax_treatment"
+        ],
+        "title": "OnboardedStore",
+        "description": "One onboarded store, from ``identity_mirror.stores`` (fields per slice 14b)."
+      },
+      "SourceMapping": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "rename": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Rename",
+            "default": {}
+          },
+          "normalize": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/TransformSpec"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Normalize",
+            "default": {}
+          },
+          "cast": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CastSpec"
+            },
+            "type": "object",
+            "title": "Cast",
+            "default": {}
+          },
+          "derive": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/TransformSpec"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Derive",
+            "default": {}
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "SourceMapping",
+        "description": "One source's mapping rules. Frozen; ``extra=\"forbid\"`` (typo'd keys fail loud)."
+      },
+      "TemplateMappingField": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "section": {
+            "type": "string",
+            "enum": [
+              "sale_event",
+              "change_event"
+            ],
+            "title": "Section"
+          },
+          "mandatory": {
+            "type": "boolean",
+            "title": "Mandatory"
+          },
+          "datatype": {
+            "type": "string",
+            "enum": [
+              "text",
+              "integer",
+              "number",
+              "date",
+              "datetime",
+              "boolean",
+              "choice",
+              "json"
+            ],
+            "title": "Datatype"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "allowed_values": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed Values"
+          },
+          "max_length": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Length"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "display_name",
+          "section",
+          "mandatory",
+          "datatype",
+          "description"
+        ],
+        "title": "TemplateMappingField",
+        "description": "One mappable canonical field, structure derived + labels authored."
+      },
+      "TransformSpec": {
+        "properties": {
+          "op": {
+            "type": "string",
+            "title": "Op"
+          },
+          "args": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Args",
+            "default": {}
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "op"
+        ],
+        "title": "TransformSpec",
+        "description": "One atomic op + its declared args. ``extra=\"forbid\"``: typo'd keys fail loud."
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

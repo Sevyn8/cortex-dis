@@ -1,0 +1,155 @@
+syntax = "proto3";
+
+package ithina.dis.identity.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/sevyn8/ithina-dis/contracts/identity/v1";
+option java_package = "com.sevyn8.ithina.dis.identity.v1";
+option java_multiple_files = true;
+
+// ---------------------------------------------------------------------------
+// DIS Identity Service (internal)
+//
+// Called by DIS receivers, the streaming consumer, and dis-api to resolve
+// tenant and store identity from various auth contexts, and to validate
+// tenant/store existence at processing time. The service wraps Customer
+// Master with a cache and circuit breaker; callers never reach Customer
+// Master directly.
+//
+// This contract is internal-only. The service is not exposed externally.
+// All calls require an internal service-to-service token (mTLS or
+// service-account JWT), validated by the server.
+//
+// Versioning: package is v1. Additive changes (new optional fields) stay
+// in v1. Breaking changes (removed fields, type changes) increment to
+// ithina.dis.identity.v2 with parallel support during migration.
+// ---------------------------------------------------------------------------
+
+service IdentityService {
+
+  // Resolve identity from a Customer Master JWT.
+  // Used by API/webhook receivers that authenticate callers with bearer tokens.
+  // The caller passes the validated JWT; the service extracts identity from
+  // claims and confirms against cached or Customer Master state.
+  //
+  // Errors: UNAUTHENTICATED (bad service token); NOT_FOUND (token did not
+  // map to known tenant + store); UNAVAILABLE (circuit open, stale window
+  // exceeded); INTERNAL (unexpected error).
+  rpc ResolveFromToken(ResolveFromTokenRequest) returns (Identity);
+
+  // Resolve identity from an upload session ID.
+  // Used by CSV upload paths (DIS UI session via dis-api, ERP POST endpoint).
+  // Identity is bound to the upload session, not to a request token.
+  //
+  // Errors: UNAUTHENTICATED; NOT_FOUND; UNAVAILABLE; INTERNAL.
+  rpc ResolveFromUpload(ResolveFromUploadRequest) returns (Identity);
+
+  // Resolve identity from an endpoint config ID.
+  // Used by reverse-API puller and ERP POST receivers. Identity is bound
+  // to the endpoint configuration registered for that pull or push target.
+  //
+  // Errors: UNAUTHENTICATED; NOT_FOUND; UNAVAILABLE; INTERNAL.
+  rpc ResolveFromEndpoint(ResolveFromEndpointRequest) returns (Identity);
+
+  // Validate that a (tenant_id, store_id) pair exists and is active.
+  // Used by the streaming consumer as an FK pre-check at processing time.
+  // Lightweight: cache lookup with fallback to Customer Master, or to
+  // identity_mirror if Customer Master is unavailable (stale-while-error).
+  // Returns ValidateResponse with exists + is_active booleans, not a full
+  // Identity. Does not return NOT_FOUND for nonexistent identities; instead
+  // returns exists=false in the response body. "Not found" is a normal
+  // answer, not an error, for this method.
+  //
+  // Errors: UNAUTHENTICATED; UNAVAILABLE; INTERNAL.
+  rpc Validate(ValidateRequest) returns (ValidateResponse);
+}
+
+// ---------------------------------------------------------------------------
+// Shared types
+// ---------------------------------------------------------------------------
+
+// Where an identity answer was sourced from. Lets callers decide whether to
+// trust the answer for security-sensitive operations.
+enum IdentitySource {
+  IDENTITY_SOURCE_UNSPECIFIED = 0;
+  IDENTITY_SOURCE_CACHE_FRESH = 1;          // Within cache TTL.
+  IDENTITY_SOURCE_CACHE_STALE = 2;          // Stale-while-error, up to 5 min.
+  IDENTITY_SOURCE_CUSTOMER_MASTER = 3;      // Freshly fetched from Customer Master.
+  IDENTITY_SOURCE_IDENTITY_MIRROR = 4;      // Validate-only: local mirror fallback.
+}
+
+// The resolved identity record. Returned by all three Resolve* methods.
+//
+// Field constraints (validated server-side, not in proto):
+//   tenant_id: internal tenant UUID (lowercase 8-4-4-4-12), identical to
+//              Customer Master core.tenants.id (decisions.md D37/D52).
+//   store_id:  internal store UUID, identical to core.stores.id.
+// The invented t_*/s_* external form is retired; the authoritative external
+// codes ride alongside as display_code/store_code (D55), readability only.
+message Identity {
+  string tenant_id = 1;
+  string store_id = 2;
+  bool is_active = 3;
+  IdentitySource source = 4;
+
+  // Free-form additional fields projected from Customer Master.
+  // Receivers may read fields like source_config or pii_policy_version.
+  // The streaming consumer typically ignores metadata entirely.
+  google.protobuf.Struct metadata = 5;
+
+  // When this identity record was last refreshed against Customer Master.
+  google.protobuf.Timestamp resolved_at = 6;
+
+  // Customer Master's authoritative external tenant code
+  // (core.tenants.display_code, e.g. "buc-ees"). Populated when present in
+  // Customer Master (nullable at source). Never a substitute for tenant_id.
+  string display_code = 7;
+
+  // Customer Master's authoritative external store code
+  // (core.stores.store_code, e.g. "TX-102"). Nullable at source; empty when
+  // absent. Never a substitute for store_id.
+  string store_code = 8;
+}
+
+// ---------------------------------------------------------------------------
+// Request messages
+// ---------------------------------------------------------------------------
+
+message ResolveFromTokenRequest {
+  // Customer Master-issued JWT, already verified for signature and expiry
+  // by the caller's auth middleware. This service extracts identity from
+  // claims; it does not re-verify the signature.
+  string jwt = 1;
+}
+
+message ResolveFromUploadRequest {
+  // Upload session identifier issued by Customer Master.
+  // Pattern: ^us_[a-z0-9]{12}$
+  string upload_session_id = 1;
+}
+
+message ResolveFromEndpointRequest {
+  // Endpoint configuration identifier registered in Customer Master.
+  // Pattern: ^ec_[a-z0-9]{12}$
+  string endpoint_config_id = 1;
+}
+
+message ValidateRequest {
+  string tenant_id = 1;  // Internal tenant UUID (D37/D52).
+  string store_id = 2;   // Internal store UUID (D37/D52).
+}
+
+message ValidateResponse {
+  // True if both tenant and store are known to Customer Master (or to
+  // identity_mirror in stale-while-error fallback).
+  bool exists = 1;
+
+  // True if both tenant and store are currently active. False if either
+  // is deactivated. Meaningful only when exists=true.
+  bool is_active = 2;
+
+  // Where this validation answer came from.
+  IdentitySource source = 3;
+}

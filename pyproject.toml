@@ -1,0 +1,276 @@
+[project]
+name = "ithina-dis"
+version = "0.0.0"
+description = "DIS — Data Integration System for the Ithina Data Platform"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  # HTTP services / clients
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "httpx>=0.27",
+
+  # Postgres
+  "sqlalchemy[asyncio]>=2.0.36",
+  "psycopg[binary]>=3.2",
+  "alembic>=1.14",
+
+  # Validation engine (decisions.md D4a)
+  "pandera[polars]>=0.20",
+  "polars>=1.0",
+  "pyarrow>=17",
+
+  # CSV / SQL preview (decisions.md D16)
+  "duckdb>=1.0",
+
+  # GCP clients
+  "google-cloud-pubsub>=2.23",
+  "google-cloud-storage>=2.18",
+  "google-cloud-bigquery>=3.25",
+  "google-cloud-kms>=3.1",
+  "google-cloud-secret-manager>=2.20",
+  "google-cloud-logging>=3.10",
+
+  # Auth (Customer Master JWT verification)
+  "pyjwt[crypto]>=2.8",
+
+  # Pydantic + config
+  "pydantic[email]>=2.9",
+  "pydantic-settings>=2.6",
+
+  # BigQuery models (decisions.md D23)
+  "dbt-bigquery>=1.8,<1.10",
+
+  # IDs (UUIDv7)
+  "uuid-utils>=0.9",
+
+  # Retry / reliability
+  "tenacity>=9",
+
+  # Fast JSON
+  "orjson>=3.10",
+
+  # Tracing (trace_id propagation per architecture.md)
+  "opentelemetry-api>=1.27",
+  "opentelemetry-sdk>=1.27",
+  "opentelemetry-exporter-gcp-trace>=1.7",
+
+  # Structured logging (matches Customer Master)
+  "python-json-logger>=2.0,<4.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.24",
+  "pytest-cov>=5",
+  "ruff==0.15.15",
+  "mypy==1.19.1",  # pinned EXACT: gate version; if a mypy pre-commit hook is ever added, pin it identically and bump both together (the ruff-skew lesson)
+  "faker>=30",
+  "pyyaml>=6.0",
+  "types-pyyaml",
+  "types-jsonschema",  # jsonschema stubs for the mypy gate (slice-9d)
+  "jsonschema>=4.23",
+
+  # Workspace members. The root is a virtual project (package = false), so members
+  # are not installed unless something in a synced group depends on them. Listing
+  # them in the default dev group means `uv sync` / `uv run` install them editable.
+  "dis-core",
+  "dis-testing",
+  "dis-canonical",
+  "dis-rls",
+  "dis-pii",
+  "dis-storage",
+  "dis-audit",
+  "dis-quarantine",
+  "dis-enrichment",
+  "dis-mapping",
+  "dis-validation",
+  "mirror-sync-consumer",
+  "csv-ingest-worker",
+  "streaming-consumer",
+  "dis-ui-server",
+
+  # Import-graph contracts (slice-05): forbidden imports between the pure
+  # pipeline libs and the I/O-bearing libs. Run via `make lint` (lint-imports).
+  "import-linter>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "TID"]
+
+[tool.ruff.lint.isort]
+# First-party DIS packages so imports group as stdlib / third-party / first-party
+# (root CLAUDE.md import convention).
+known-first-party = [
+  "dis_core",
+  "dis_testing",
+  "dis_audit",
+  "dis_canonical",
+  "dis_enrichment",
+  "dis_mapping",
+  "dis_quarantine",
+  "dis_pii",
+  "dis_rls",
+  "dis_storage",
+  "dis_validation",
+  "mirror_sync_consumer",
+  "csv_ingest_worker",
+  "streaming_consumer",
+  "dis_ui_server",
+]
+
+[tool.mypy]
+# mypy --strict gate (slice-9d): ENFORCING from day one over the Makefile's
+# MYPY_PACKAGES list, which only ever grows — a package is added in the same
+# commit that clears it. Invocation is per-package (`make mypy`) because
+# identically-named test modules across libs (test dirs have no __init__.py,
+# by design — see pytest importlib mode below) cannot share one mypy run; the
+# Makefile list IS the explicit files list.
+# The exclude is the structural boundary: services/dis-ui is TypeScript and
+# separately owned; a stray .py there must never be collected by this gate.
+# mypy itself is pinned EXACT in [dependency-groups] (the ruff-skew lesson).
+strict = true
+plugins = ["pydantic.mypy"]
+python_version = "3.12"
+exclude = "^services/dis-ui/"
+
+[[tool.mypy.overrides]]
+# The google-cloud namespace packages (pubsub, storage) ship no py.typed mypy
+# can use; standard resolution, scoped to the namespace — not a blanket ignore.
+module = "google.cloud.*"
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+# Unit tests live next to code (libs/<name>/tests); integration/e2e in repo-root tests/.
+# importlib mode lets identically-named test files coexist across libs without
+# __init__.py juggling.
+testpaths = ["tests", "libs", "services"]
+addopts = "--import-mode=importlib"
+markers = [
+  "integration: requires the local docker-compose stack (Postgres + fakes + emulators)",
+]
+
+# Import-graph contracts (slice-05): the two pure pipeline libs must not import
+# each other, the I/O-bearing DIS libs, or any DB/GCP client. The import graph
+# alone cannot prove the absence of runtime I/O — that is additionally held by
+# the no-I/O contract test (tests/contract/) plus review.
+[tool.importlinter]
+root_packages = ["dis_enrichment", "dis_mapping", "dis_validation"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "dis-mapping is pure: no sibling pipeline lib, no I/O-bearing lib, no DB/GCP client"
+type = "forbidden"
+source_modules = ["dis_mapping"]
+forbidden_modules = [
+  "dis_enrichment",
+  "dis_validation",
+  "dis_canonical",
+  "dis_rls",
+  "dis_pii",
+  "dis_storage",
+  "dis_audit",
+  "dis_quarantine",
+  "dis_testing",
+  "sqlalchemy",
+  "psycopg",
+  "google",
+  "httpx",
+  "redis",
+]
+
+[[tool.importlinter.contracts]]
+name = "dis-validation is pure: no sibling pipeline lib, no I/O-bearing lib, no DB/GCP client"
+type = "forbidden"
+source_modules = ["dis_validation"]
+forbidden_modules = [
+  "dis_enrichment",
+  "dis_mapping",
+  "dis_rls",
+  "dis_pii",
+  "dis_storage",
+  "dis_audit",
+  "dis_quarantine",
+  "dis_testing",
+  "sqlalchemy",
+  "psycopg",
+  "google",
+  "httpx",
+  "redis",
+]
+
+[[tool.importlinter.contracts]]
+name = "dis-enrichment is pure: no sibling pipeline lib, no I/O-bearing lib, no DB/GCP client"
+type = "forbidden"
+source_modules = ["dis_enrichment"]
+forbidden_modules = [
+  "dis_mapping",
+  "dis_validation",
+  "dis_canonical",
+  "dis_rls",
+  "dis_pii",
+  "dis_storage",
+  "dis_audit",
+  "dis_quarantine",
+  "dis_testing",
+  "sqlalchemy",
+  "psycopg",
+  "google",
+  "httpx",
+  "redis",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+# Workspace members are declared here as they are built (root CLAUDE.md: "workspace
+# members declared in root pyproject.toml once they exist"). Slice 3 adds dis-canonical;
+# Slice 4 adds the three data-plane safety libs.
+members = [
+  "libs/dis-core",
+  "libs/dis-testing",
+  "libs/dis-canonical",
+  "libs/dis-rls",
+  "libs/dis-pii",
+  "libs/dis-storage",
+  "libs/dis-audit",
+  "libs/dis-quarantine",
+  "libs/dis-enrichment",
+  "libs/dis-mapping",
+  "libs/dis-validation",
+  "services/mirror-sync-consumer",
+  "services/csv-ingest-worker",
+  "services/streaming-consumer",
+  "services/dis-ui-server",
+]
+
+[tool.uv.sources]
+# Workspace libs resolve from the workspace. dis-testing and dis-canonical both
+# depend on dis-core; dis-canonical uses its identifier aliases. The Slice 4 data-plane
+# libs each depend on dis-core (dis-pii on dis-core only — no dis-rls, no DB).
+dis-core = { workspace = true }
+dis-testing = { workspace = true }
+dis-canonical = { workspace = true }
+dis-rls = { workspace = true }
+dis-pii = { workspace = true }
+dis-storage = { workspace = true }
+dis-audit = { workspace = true }
+dis-quarantine = { workspace = true }
+dis-enrichment = { workspace = true }
+dis-mapping = { workspace = true }
+dis-validation = { workspace = true }
+mirror-sync-consumer = { workspace = true }
+csv-ingest-worker = { workspace = true }
+streaming-consumer = { workspace = true }
+dis-ui-server = { workspace = true }

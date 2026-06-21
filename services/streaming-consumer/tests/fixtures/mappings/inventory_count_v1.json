@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "rename": {
+    "counted_at": "source_event_timestamp",
+    "sku": "sku_id",
+    "stock": "value_after"
+  },
+  "normalize": {
+    "source_event_timestamp": [
+      {"op": "parse_datetime", "args": {"format": "%Y-%m-%d %H:%M:%S", "timezone": "UTC"}}
+    ]
+  },
+  "cast": {
+    "source_event_timestamp": {"type": "datetime"}
+  },
+  "derive": {
+    "event_date": [
+      {"op": "date_from_datetime", "args": {"source_column": "source_event_timestamp"}}
+    ],
+    "event_category": [{"op": "constant", "args": {"value": "INVENTORY"}}],
+    "event_subtype": [{"op": "constant", "args": {"value": "COUNT"}}],
+    "attribute_name": [{"op": "constant", "args": {"value": "stock_qty"}}]
+  }
+}

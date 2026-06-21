@@ -1,0 +1,27 @@
+[project]
+name = "mirror-sync-consumer"
+version = "0.0.0"
+description = "DIS Mirror Sync Consumer (Slice 7, DB-pull mode): reads Customer Master's Postgres under a platform read context and upserts tenant/store identity into identity_mirror. Run-to-completion; first load + reconciliation. Pub/Sub consumer mode deferred (decisions.md D35)."
+requires-python = ">=3.12"
+dependencies = [
+  # DisError root (MirrorSyncError/CustomerMasterReadError), UUIDv7, trace_id, logging.
+  "dis-core",
+  # The DIS write goes through the RLS-aware session, inheriting the
+  # current_database()=='ithina_dis_db' + NOBYPASSRLS target guard. identity_mirror is
+  # RLS-off (D41) so the per-tenant scope is a harmless no-op; the guard is the point.
+  "dis-rls",
+  # Async engine + connection for both the CM read and the DIS write (psycopg v3 async).
+  "sqlalchemy[asyncio]>=2.0.36",
+  "psycopg[binary]>=3.2",
+  # Typed read DTOs for CM rows.
+  "pydantic>=2.9",
+]
+# NOT dis-audit: audit is log-only this slice (Slice 7 plan, operator directive). The
+# dis-audit vocabulary has no operational/non-ingress slot; that gap is registered, deferred.
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mirror_sync_consumer"]

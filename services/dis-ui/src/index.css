@@ -1,0 +1,319 @@
+/*
+  DIS UI design system (slice 23). Tokens, type scale, and base layer reproduced
+  exactly from the admin-frontend design language (Sevyn8/ithina-retail-admin-frontend,
+  app/globals.css) so the two share one look and feel. oklch values are copied
+  verbatim, not re-picked (FM5). Tailwind v4 CSS-first; no tailwind.config.
+
+  Aesthetic: Salesforce-adjacent enterprise B2B admin. Dense, table-heavy, utilitarian.
+
+  Typography scale:
+    text-display     24/32   600   page titles (one per page)
+    text-heading     18/24   600   section headers within a page
+    text-subheading  15/22   600   card titles, drawer titles
+    text-body        14/20   400   default body text
+    text-body-strong 14/20   500   emphasized inline body
+    text-caption     13/18   400   captions, table cells secondary, helper
+    text-label       12/16   500   form labels, column headers (uppercase tracking-wide)
+    text-micro       11/14   400   timestamps, tertiary metadata
+
+  Border radius: sm 2px / base 4px / md 6px (workhorse) / lg 8px / xl 10px.
+  Shadow elevation: cards border-only; sm dropdowns/menus; md modals/drawers.
+*/
+
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-destructive: var(--danger);
+  --color-info: var(--info);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* Source-type identities (redesign R1). Each connector/source type carries its own
+     color, used consistently across the connector picker, the Dashboard breakdown, and
+     source rows. Additive: no existing screen references these. Consumed via the single
+     source-identity helper (literal classes bg-/text-/border-/ring-source-*). */
+  --color-source-csv: var(--source-csv);
+  --color-source-shopify-pos: var(--source-shopify-pos);
+  --color-source-square: var(--source-square);
+  --color-source-other: var(--source-other);
+
+  --font-sans: var(--font-inter-sans);
+  --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-inter-sans);
+
+  --radius-sm: 0.125rem;
+  --radius: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.625rem;
+  /* Softer hero/identity-card radius (redesign R1). Additive. */
+  --radius-2xl: 0.875rem;
+
+  --shadow-sm: var(--shadow-sm-value);
+  --shadow-md: var(--shadow-md-value);
+
+  /* Animation tokens. Theme-agnostic. */
+  --duration-instant: 100ms;
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+  --duration-slow: 280ms;
+
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+}
+
+:root {
+  /* Font families, loaded via @fontsource in main.tsx (the DIS UI cannot use next/font).
+     The @theme font tokens above resolve through these. T7: Inter is the app-wide sans
+     face (matching the Ithina console); Geist Mono stays for code/monospace. */
+  --font-inter-sans: 'Inter', system-ui, sans-serif;
+  --font-geist-mono: 'Geist Mono', ui-monospace, monospace;
+
+  /* Light theme (default). System preference + user override via next-themes. */
+  --background: oklch(0.98 0 0);
+  --foreground: oklch(0.15 0 0);
+  --foreground-muted: oklch(0.40 0 0);
+  --foreground-subtle: oklch(0.55 0 0);
+  --surface: oklch(1.00 0 0);
+  --surface-raised: oklch(0.97 0 0);
+  --card: oklch(1.00 0 0);
+  --card-foreground: oklch(0.15 0 0);
+  --popover: oklch(1.00 0 0);
+  --popover-foreground: oklch(0.15 0 0);
+  --primary: oklch(0.62 0.19 257);
+  --primary-foreground: oklch(1.00 0 0);
+  --secondary: oklch(0.96 0 0);
+  --secondary-foreground: oklch(0.20 0 0);
+  --muted: oklch(0.96 0 0);
+  --muted-foreground: oklch(0.40 0 0);
+  --accent: oklch(0.96 0 0);
+  --accent-foreground: oklch(0.20 0 0);
+  --success: oklch(0.60 0.18 162);
+  --warning: oklch(0.72 0.17 65);
+  --danger: oklch(0.58 0.22 25);
+  --destructive: oklch(0.58 0.22 25);
+  --info: oklch(0.55 0.22 280);
+  --border: oklch(0.91 0 0);
+  --border-strong: oklch(0.83 0 0);
+  --input: oklch(0.91 0 0);
+  --ring: oklch(0.62 0.19 257);
+
+  --shadow-sm-value: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md-value: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  --chart-1: oklch(0.62 0.19 257);
+  --chart-2: oklch(0.60 0.18 162);
+  --chart-3: oklch(0.72 0.17 65);
+  --chart-4: oklch(0.58 0.22 25);
+  --chart-5: oklch(0.55 0.22 280);
+
+  /* Source-type identities (redesign R1), light. Distinct hues, distinct from primary
+     (257): CSV cyan/teal (the live source), Shopify green, Square indigo, Other slate. */
+  --source-csv: oklch(0.62 0.12 205);
+  --source-shopify-pos: oklch(0.64 0.15 150);
+  --source-square: oklch(0.55 0.18 285);
+  --source-other: oklch(0.55 0.03 260);
+
+  --sidebar: oklch(1.00 0 0);
+  --sidebar-foreground: oklch(0.15 0 0);
+  --sidebar-primary: oklch(0.62 0.19 257);
+  --sidebar-primary-foreground: oklch(1.00 0 0);
+  --sidebar-accent: oklch(0.96 0 0);
+  --sidebar-accent-foreground: oklch(0.20 0 0);
+  --sidebar-border: oklch(0.91 0 0);
+  --sidebar-ring: oklch(0.62 0.19 257);
+}
+
+.dark {
+  --background: oklch(0.10 0 0);
+  --foreground: oklch(0.92 0 0);
+  --foreground-muted: oklch(0.75 0 0);
+  --foreground-subtle: oklch(0.51 0 0);
+  --surface: oklch(0.16 0 0);
+  --surface-raised: oklch(0.20 0 0);
+  --card: oklch(0.16 0 0);
+  --card-foreground: oklch(0.92 0 0);
+  --popover: oklch(0.20 0 0);
+  --popover-foreground: oklch(0.92 0 0);
+  --primary: oklch(0.62 0.19 257);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.20 0 0);
+  --secondary-foreground: oklch(0.92 0 0);
+  --muted: oklch(0.20 0 0);
+  --muted-foreground: oklch(0.75 0 0);
+  --accent: oklch(0.20 0 0);
+  --accent-foreground: oklch(0.92 0 0);
+  --success: oklch(0.69 0.16 165);
+  --warning: oklch(0.75 0.16 71);
+  --danger: oklch(0.65 0.24 25);
+  --destructive: oklch(0.65 0.24 25);
+  --info: oklch(0.59 0.21 280);
+  --border: oklch(0.22 0 0);
+  --border-strong: oklch(0.30 0 0);
+  --input: oklch(0.22 0 0);
+  --ring: oklch(0.62 0.19 257);
+
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+
+  /* Source-type identities (redesign R1), dark. Lighter/brighter than light mode so they
+     read on the dark surface; same hues as light. */
+  --source-csv: oklch(0.73 0.11 205);
+  --source-shopify-pos: oklch(0.75 0.14 150);
+  --source-square: oklch(0.68 0.17 285);
+  --source-other: oklch(0.70 0.03 260);
+
+  --sidebar: oklch(0.16 0 0);
+  --sidebar-foreground: oklch(0.92 0 0);
+  --sidebar-primary: oklch(0.62 0.19 257);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.20 0 0);
+  --sidebar-accent-foreground: oklch(0.92 0 0);
+  --sidebar-border: oklch(0.22 0 0);
+  --sidebar-ring: oklch(0.62 0.19 257);
+
+  --shadow-sm-value: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md-value: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+@utility text-display {
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Hero headline (redesign R1), one step above text-display. Additive. */
+@utility text-display-lg {
+  font-size: 30px;
+  line-height: 38px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+@utility text-heading {
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+@utility text-subheading {
+  font-size: 15px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+@utility text-body {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+}
+
+@utility text-body-strong {
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+@utility text-caption {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 400;
+}
+
+@utility text-label {
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+@utility text-micro {
+  font-size: 11px;
+  line-height: 14px;
+  font-weight: 400;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@utility skeleton-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--surface) 25%,
+    var(--surface-raised) 50%,
+    var(--surface) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Reduced-motion respect. Nukes all transition/animation durations to effectively
+   zero without breaking layouts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,36 @@
+# Staging values. Known/locked config is set; image URIs are filled in after
+# you build and push to Artifact Registry.
+
+project_id     = "ithina-retail-dis"
+project_number = "1002062049747"
+region         = "asia-south1"
+zone           = "asia-south1-a"
+env            = "staging"
+name_prefix    = "dis"
+
+labels = {
+  workload    = "dis"
+  env         = "staging"
+  cost_center = "ithina"
+}
+
+subnet_cidr = "10.20.0.0/24"
+
+# Smallest viable. Confirm the smallest tier valid for POSTGRES_16 in your project.
+cloud_sql_tier   = "db-f1-micro"
+postgres_version = "POSTGRES_16"
+dis_db_name      = "ithina_dis_db"
+dis_db_user      = "ithina_dis_user"
+
+artifact_repo_id = "dis-images"
+
+sftpgo_machine_type = "e2-small"
+
+# Fill these after building + pushing images:
+# image_dis_ui_server        = "asia-south1-docker.pkg.dev/ithina-retail-dis/dis-images/dis-ui-server:TAG"
+# image_dis_ui               = "asia-south1-docker.pkg.dev/ithina-retail-dis/dis-images/dis-ui:TAG"
+# image_csv_ingest_worker    = "asia-south1-docker.pkg.dev/ithina-retail-dis/dis-images/csv-ingest-worker:TAG"
+# image_streaming_consumer   = "asia-south1-docker.pkg.dev/ithina-retail-dis/dis-images/streaming-consumer:TAG"
+# image_mirror_sync_consumer = "asia-south1-docker.pkg.dev/ithina-retail-dis/dis-images/mirror-sync-consumer:TAG"
+# dis_ui_server_url          = "https://dis-ui-server-XXXX.asia-south1.run.app"
+# dis_ui_url                 = "https://dis-ui-XXXX.asia-south1.run.app"

@@ -1,0 +1,495 @@
+#!/usr/bin/env bash
+# run_dis_on_local: bring up the whole DIS local system in the correct order,
+# health-gate each step, and report status. Residents keep running after the
+# script exits.
+#
+# Usage:
+#   scripts/run_dis_on_local [start] [--no-seed]   full bringup (default)
+#   scripts/run_dis_on_local stop                  stop residents this script started
+#   scripts/run_dis_on_local status                show current resident health
+#
+# In scope: infra+fakes (make run-local), make check gate, mirror-sync batch,
+# seed, csv-ingest-worker, streaming-consumer, dis-ui-server, dis-ui.
+# Out of scope (stubs, never started): quarantine-drainer, nightly-batch,
+# daily-compute.
+#
+# dis-ui is run with env vars on the command line only. This script never
+# creates or edits any file inside services/dis-ui.
+#
+# Logs and pidfiles live under /tmp/dis-run-logs so the repo stays clean.
+
+set -euo pipefail
+
+REPO_ROOT="${DIS_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+RUN_DIR="${DIS_RUN_DIR:-/tmp/dis-run-logs}"
+
+UI_SERVER_PORT=8080
+UI_PORT=5173
+UI_SERVER_READYZ="http://localhost:${UI_SERVER_PORT}/readyz"
+UI_URL="http://localhost:${UI_PORT}/"
+API_PROBE="http://localhost:${UI_SERVER_PORT}/api/v1/stores-onboarded"
+
+RESIDENTS=(csv-ingest-worker streaming-consumer dis-ui-server dis-ui)
+
+STARTED_THIS_RUN=()
+STATUS_ROWS=()
+CAVEATS=()
+SEED_NOTE="ran"
+
+# ---------------------------------------------------------------------------
+# helpers
+# ---------------------------------------------------------------------------
+
+say()  { echo "[run_dis_on_local] $*"; }
+step() { echo ""; echo "==> $*"; }
+
+usage() {
+    sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    exit "${1:-0}"
+}
+
+die_with_tail() {
+    # $1 = component name, $2 = reason, $3 = log file
+    local name="$1" reason="$2" logf="$3"
+    echo ""
+    echo "FAILED: ${name}: ${reason}" >&2
+    if [[ -f "$logf" ]]; then
+        echo "---- last 40 lines of ${logf} ----" >&2
+        tail -n 40 "$logf" >&2
+        echo "---- end of log tail ----" >&2
+    else
+        echo "(no log file at ${logf})" >&2
+    fi
+    echo "Aborting. Anything already started is left running; use '$0 stop' to clean up." >&2
+    exit 1
+}
+
+http_code() {
+    local code
+    code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$1" 2>/dev/null) || true
+    echo "${code:-000}"
+}
+
+readyz_ok() {
+    local out code body
+    out=$(curl -s --max-time 5 -w $'\n%{http_code}' "$UI_SERVER_READYZ" 2>/dev/null) || return 1
+    code="${out##*$'\n'}"
+    body="${out%$'\n'*}"
+    [[ "$code" == "200" && "$body" == *ready* ]]
+}
+
+# A port counts as bound unless curl reports connection refused (exit 7).
+# curl on localhost tries both IPv4 and IPv6, unlike /dev/tcp.
+port_bound() {
+    local rc=0
+    curl -s -o /dev/null --max-time 3 "http://localhost:$1/" 2>/dev/null || rc=$?
+    [[ "$rc" -ne 7 ]]
+}
+
+pidfile_of() { echo "$RUN_DIR/$1.pid"; }
+logfile_of() { echo "$RUN_DIR/$1.log"; }
+
+pid_of() {
+    local pf
+    pf=$(pidfile_of "$1")
+    [[ -f "$pf" ]] && cat "$pf" || echo ""
+}
+
+is_alive() {
+    local pid
+    pid=$(pid_of "$1")
+    [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null
+}
+
+# Start a resident in its own process group (setsid) so stop can kill the
+# whole tree, including children like vite under pnpm.
+# $1 = name, $2 = working dir, rest = command.
+start_resident() {
+    local name="$1" workdir="$2"
+    shift 2
+    local logf pf
+    logf=$(logfile_of "$name")
+    pf=$(pidfile_of "$name")
+    : >"$logf"
+    (
+        cd "$workdir"
+        setsid "$@" >>"$logf" 2>&1 </dev/null &
+        echo $! >"$pf"
+    )
+    STARTED_THIS_RUN+=("$name")
+    say "started ${name} (pid $(cat "$pf"), log ${logf})"
+}
+
+# Gate: resident still alive after a settle window.
+gate_alive() {
+    local name="$1" settle="${2:-5}" i pid
+    pid=$(pid_of "$name")
+    for ((i = 0; i < settle; i++)); do
+        if ! kill -0 "$pid" 2>/dev/null; then
+            die_with_tail "$name" "process exited during startup" "$(logfile_of "$name")"
+        fi
+        sleep 1
+    done
+}
+
+# Gate: poll a URL until 200, bounded by timeout seconds.
+wait_for_http() {
+    local name="$1" url="$2" timeout="$3" deadline code
+    deadline=$((SECONDS + timeout))
+    while ((SECONDS < deadline)); do
+        code=$(http_code "$url")
+        if [[ "$code" == "200" ]]; then
+            return 0
+        fi
+        sleep 2
+    done
+    die_with_tail "$name" "no HTTP 200 from ${url} within ${timeout}s (last code ${code})" "$(logfile_of "$name")"
+}
+
+# Gate: poll /readyz until 200 with a ready body, bounded by timeout seconds.
+wait_for_readyz() {
+    local name="$1" timeout="$2" deadline
+    deadline=$((SECONDS + timeout))
+    while ((SECONDS < deadline)); do
+        if readyz_ok; then
+            return 0
+        fi
+        sleep 2
+    done
+    die_with_tail "$name" "/readyz never returned 200 ready within ${timeout}s" "$(logfile_of "$name")"
+}
+
+stop_one() {
+    local name="$1" pf pid
+    pf=$(pidfile_of "$name")
+    if [[ ! -f "$pf" ]]; then
+        say "${name}: no pidfile, nothing to stop"
+        return 0
+    fi
+    pid=$(cat "$pf")
+    if kill -0 "$pid" 2>/dev/null; then
+        kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+        local i
+        for ((i = 0; i < 10; i++)); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+            say "${name}: force-killed (pid ${pid})"
+        else
+            say "${name}: stopped (pid ${pid})"
+        fi
+    else
+        say "${name}: not running (stale pidfile)"
+    fi
+    rm -f "$pf"
+}
+
+on_interrupt() {
+    trap - INT TERM
+    echo ""
+    say "interrupted; stopping processes started by this run..."
+    local name
+    for name in "${STARTED_THIS_RUN[@]}"; do
+        stop_one "$name"
+    done
+    exit 130
+}
+
+add_row() { STATUS_ROWS+=("$1|$2|$3|$4"); }
+
+print_table() {
+    echo ""
+    printf '%-20s %-18s %-30s %s\n' "COMPONENT" "PID/PORT" "HEALTH" "LOG"
+    printf '%-20s %-18s %-30s %s\n' "---------" "--------" "------" "---"
+    local row
+    for row in "${STATUS_ROWS[@]}"; do
+        IFS='|' read -r c p h l <<<"$row"
+        printf '%-20s %-18s %-30s %s\n' "$c" "$p" "$h" "$l"
+    done
+}
+
+# ---------------------------------------------------------------------------
+# subcommands
+# ---------------------------------------------------------------------------
+
+cmd_stop() {
+    say "stopping residents recorded in ${RUN_DIR}..."
+    local name
+    for name in "${RESIDENTS[@]}"; do
+        stop_one "$name"
+    done
+    echo ""
+    say "docker infra is managed separately:"
+    say "  make stop-local    stop containers, keep data"
+    say "  make reset-local   stop containers and wipe volumes"
+}
+
+cmd_status() {
+    local name pid state
+    for name in "${RESIDENTS[@]}"; do
+        pid=$(pid_of "$name")
+        if [[ -z "$pid" ]]; then
+            state="no pidfile"
+        elif kill -0 "$pid" 2>/dev/null; then
+            state="alive"
+        else
+            state="dead (stale pidfile)"
+        fi
+        case "$name" in
+        dis-ui-server)
+            if readyz_ok; then state="${state}, readyz 200 ready"; else state="${state}, readyz not ready"; fi
+            ;;
+        dis-ui)
+            state="${state}, http $(http_code "$UI_URL")"
+            ;;
+        esac
+        add_row "$name" "${pid:--}" "$state" "$(logfile_of "$name")"
+    done
+    print_table
+}
+
+# ---------------------------------------------------------------------------
+# bringup
+# ---------------------------------------------------------------------------
+
+cmd_start() {
+    local no_seed="$1"
+    local missing cmd_name
+    for cmd_name in curl make docker uv pnpm setsid; do
+        if ! command -v "$cmd_name" >/dev/null 2>&1; then
+            echo "FAILED: required command not found: ${cmd_name}" >&2
+            exit 1
+        fi
+    done
+
+    mkdir -p "$RUN_DIR"
+    cd "$REPO_ROOT"
+    if [[ ! -f .env ]]; then
+        echo "FAILED: ${REPO_ROOT}/.env not found; manual processes need it" >&2
+        exit 1
+    fi
+
+    trap on_interrupt INT TERM
+
+    # Step 1: infra + fakes + topics + migrations
+    step "1/8 make run-local (docker infra, topics, migrations)"
+    local logf="$RUN_DIR/make-run-local.log"
+    if ! make run-local >"$logf" 2>&1; then
+        die_with_tail "make run-local" "exited non-zero" "$logf"
+    fi
+    say "infra up, topics created, migrations applied"
+    add_row "infra+fakes" "docker" "make run-local ok" "$logf"
+
+    # Step 2: preflight gate. check_setup.sh exits non-zero if ANY check fails,
+    # so the gate is the exit code; the parsed count is display only.
+    step "2/8 make check (preflight gate)"
+    logf="$RUN_DIR/make-check.log"
+    if ! make check >"$logf" 2>&1; then
+        die_with_tail "make check" "preflight failed (expected all checks PASS)" "$logf"
+    fi
+    local passed_line
+    passed_line=$(sed -e 's/\x1b\[[0-9;]*m//g' "$logf" | grep -E 'Passed:' | tail -n 1 | sed 's/^ *//')
+    say "preflight ok: ${passed_line:-Passed line not found, but exit code was 0}"
+    add_row "make check" "-" "${passed_line:-exit 0}" "$logf"
+
+    # Manual processes (and mirror-sync, run below) need .env in this shell. Only
+    # make targets inherit .env automatically.
+    set -a
+    # shellcheck disable=SC1091
+    source "$REPO_ROOT/.env"
+    set +a
+
+    # Step 3: mirror-sync batch (run to completion). MUST precede the seed:
+    # identity_mirror is owned by mirror-sync, and the seed's config.source_mappings
+    # row FK-references a mirrored tenant — sync first, then seed.
+    step "3/8 mirror-sync batch (run to completion)"
+    logf="$RUN_DIR/mirror-sync.log"
+    local rc=0
+    uv run python -m mirror_sync_consumer.pull.runner >"$logf" 2>&1 || rc=$?
+    if [[ "$rc" -ne 0 ]]; then
+        die_with_tail "mirror-sync" "exited with code ${rc} (expected 0)" "$logf"
+    fi
+    say "mirror-sync completed, exit 0"
+    add_row "mirror-sync" "batch" "exit 0" "$logf"
+
+    # Step 4: seed (optional). Runs AFTER mirror-sync so its mapping FK target
+    # (the mirrored tenant) already exists.
+    if [[ "$no_seed" == "yes" ]]; then
+        step "4/8 make seed (skipped: --no-seed)"
+        SEED_NOTE="skipped (--no-seed)"
+        CAVEATS+=("seed was skipped (--no-seed)")
+        add_row "seed" "-" "skipped" "-"
+    else
+        step "4/8 make seed (config.source_mappings)"
+        logf="$RUN_DIR/make-seed.log"
+        if ! make seed >"$logf" 2>&1; then
+            die_with_tail "make seed" "exited non-zero" "$logf"
+        fi
+        say "seed ok"
+        add_row "seed" "-" "ok" "$logf"
+    fi
+
+    # Step 5: csv-ingest-worker (resident)
+    step "5/8 csv-ingest-worker (resident)"
+    if is_alive csv-ingest-worker; then
+        say "csv-ingest-worker already running (pid $(pid_of csv-ingest-worker)), reusing"
+        CAVEATS+=("csv-ingest-worker was already running and was reused")
+    else
+        start_resident csv-ingest-worker "$REPO_ROOT" uv run python -m csv_ingest_worker.main
+        gate_alive csv-ingest-worker 5
+    fi
+    add_row "csv-ingest-worker" "$(pid_of csv-ingest-worker)" "alive" "$(logfile_of csv-ingest-worker)"
+
+    # Step 6: streaming-consumer (resident)
+    step "6/8 streaming-consumer (resident)"
+    if is_alive streaming-consumer; then
+        say "streaming-consumer already running (pid $(pid_of streaming-consumer)), reusing"
+        CAVEATS+=("streaming-consumer was already running and was reused")
+    else
+        start_resident streaming-consumer "$REPO_ROOT" uv run python -m streaming_consumer.main
+        gate_alive streaming-consumer 5
+    fi
+    add_row "streaming-consumer" "$(pid_of streaming-consumer)" "alive" "$(logfile_of streaming-consumer)"
+
+    # Step 7: dis-ui-server (resident, port 8080)
+    step "7/8 dis-ui-server (resident, port ${UI_SERVER_PORT})"
+    local ui_server_pid="-"
+    if port_bound "$UI_SERVER_PORT"; then
+        if readyz_ok; then
+            say "port ${UI_SERVER_PORT} already serving /readyz 200 ready, reusing"
+            CAVEATS+=("dis-ui-server on :${UI_SERVER_PORT} was already running and was reused")
+            ui_server_pid="reused"
+            [[ -n "$(pid_of dis-ui-server)" ]] && ui_server_pid="$(pid_of dis-ui-server)"
+        else
+            local code
+            code=$(http_code "$UI_SERVER_READYZ")
+            if [[ "$code" == "503" ]]; then
+                say "a dis-ui-server is on :${UI_SERVER_PORT} but not ready (503); waiting for it"
+                wait_for_readyz "dis-ui-server" 60
+                ui_server_pid="reused"
+            else
+                echo "FAILED: port ${UI_SERVER_PORT} is bound but /readyz returned ${code}." >&2
+                echo "Something else owns :${UI_SERVER_PORT}. Free the port and re-run." >&2
+                exit 1
+            fi
+        fi
+    else
+        start_resident dis-ui-server "$REPO_ROOT" \
+            uv run uvicorn dis_ui_server.main:app --host 0.0.0.0 --port "$UI_SERVER_PORT"
+        wait_for_readyz "dis-ui-server" 60
+        ui_server_pid="$(pid_of dis-ui-server)"
+    fi
+    say "dis-ui-server ready: /readyz 200 ready"
+    add_row "dis-ui-server" "${ui_server_pid} :${UI_SERVER_PORT}" "readyz 200 ready" "$(logfile_of dis-ui-server)"
+
+    # Step 8: dis-ui (resident, port 5173). Env vars go on the command line
+    # only; nothing is ever written inside services/dis-ui.
+    step "8/8 dis-ui (resident, port ${UI_PORT}, real mode)"
+    local ui_pid="-"
+    if port_bound "$UI_PORT"; then
+        if [[ "$(http_code "$UI_URL")" == "200" ]]; then
+            say "port ${UI_PORT} already serving 200, reusing"
+            CAVEATS+=("dis-ui on :${UI_PORT} was already running and was reused; its mode (real vs fixture) cannot be confirmed from here")
+            ui_pid="reused"
+            [[ -n "$(pid_of dis-ui)" ]] && ui_pid="$(pid_of dis-ui)"
+        else
+            echo "FAILED: port ${UI_PORT} is bound but GET / did not return 200." >&2
+            echo "Something else owns :${UI_PORT}. Free the port and re-run." >&2
+            exit 1
+        fi
+    else
+        start_resident dis-ui "$REPO_ROOT/services/dis-ui" \
+            env VITE_DIS_UI_SERVER_MODE=real \
+            VITE_DIS_UI_SERVER_BASE_URL="http://localhost:${UI_SERVER_PORT}/api" \
+            pnpm dev
+        wait_for_http "dis-ui" "$UI_URL" 90
+        ui_pid="$(pid_of dis-ui)"
+    fi
+    say "dis-ui serving 200 on :${UI_PORT}"
+    add_row "dis-ui" "${ui_pid} :${UI_PORT}" "http 200" "$(logfile_of dis-ui)"
+
+    # Final verification: one real-mode API through the server. The endpoint
+    # requires a Bearer token (auth seam, slice 14b). Mint a dev-stub token by
+    # importing the server's own constants, so no secret is duplicated here.
+    step "verify real-mode API (dev-stub token, GET /api/v1/stores-onboarded)"
+    local token=""
+    token=$(uv run python - <<'PYEOF'
+import time
+
+import jwt
+
+from dis_testing import fixtures as fx
+from dis_ui_server.auth import verifier as v
+
+claims = {
+    "sub": "run-dis-on-local-probe",
+    "tenant_id": str(fx.TENANTS[0].uuid),
+    "user_type": "TENANT",
+    "roles": [],
+    "iss": v.DEV_STUB_ISSUER,
+    "aud": v.DEV_STUB_AUDIENCE,
+    "exp": int(time.time()) + 600,
+}
+print(jwt.encode(claims, v.DEV_STUB_SECRET, algorithm=v.DEV_STUB_ALGORITHM))
+PYEOF
+    ) || true
+    if [[ -z "$token" ]]; then
+        die_with_tail "api probe" "could not mint a dev-stub token via uv run python" "$(logfile_of dis-ui-server)"
+    fi
+    local api_code
+    api_code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+        -H "Authorization: Bearer ${token}" "$API_PROBE" 2>/dev/null) || true
+    if [[ "$api_code" != "200" ]]; then
+        die_with_tail "dis-ui-server" "GET ${API_PROBE} returned ${api_code:-000} (expected 200)" "$(logfile_of dis-ui-server)"
+    fi
+    say "GET ${API_PROBE} returned 200 (authenticated with a dev-stub token)"
+    add_row "api probe" ":${UI_SERVER_PORT}" "stores-onboarded 200" "-"
+
+    trap - INT TERM
+
+    # Success report
+    print_table
+    echo ""
+    say "DIS local system is up."
+    say "UI:   ${UI_URL} (real mode, server base http://localhost:${UI_SERVER_PORT}/api)"
+    say "Stop: $0 stop   (infra: make stop-local or make reset-local)"
+    say "Seed: ${SEED_NOTE}"
+    say "Note: curl confirms the API is reachable; browser CORS itself can only be confirmed in devtools."
+    if [[ ${#CAVEATS[@]} -gt 0 ]]; then
+        echo ""
+        say "caveats:"
+        local c
+        for c in "${CAVEATS[@]}"; do
+            say "  - ${c}"
+        done
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+
+main() {
+    local sub="start" no_seed="no" arg
+    for arg in "$@"; do
+        case "$arg" in
+        start | stop | status) sub="$arg" ;;
+        --no-seed) no_seed="yes" ;;
+        -h | --help) usage 0 ;;
+        *)
+            echo "unknown argument: $arg" >&2
+            usage 1
+            ;;
+        esac
+    done
+
+    case "$sub" in
+    start) cmd_start "$no_seed" ;;
+    stop) cmd_stop ;;
+    status) cmd_status ;;
+    esac
+}
+
+main "$@"

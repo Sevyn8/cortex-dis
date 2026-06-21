@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ithina.dis.contracts.pubsub.mapping.changed.v1",
+  "title": "mapping.changed",
+  "description": "Published by dis-ui-server when a source mapping config is created, updated, promoted (staged->active), or deprecated. Consumed by the streaming-consumer to refresh its mapping side-input cache without waiting for the next periodic poll. Enables sub-30-second propagation of mapping changes to live processing.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "tenant_id",
+    "source_id",
+    "mapping_version_id",
+    "status",
+    "changed_ts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this event. Used by the consumer for idempotent cache refresh."
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["created", "updated", "promoted", "deprecated"],
+      "description": "What kind of change occurred. created: first version of a (tenant, source) mapping. updated: new version replacing prior. promoted: staged->active transition (after shadow rollout). deprecated: active->deprecated transition."
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal tenant UUID, identical to Customer Master core.tenants.id and identity_mirror.tenants.tenant_id. Load-bearing identity."
+    },
+    "tenant_display_code": {
+      "type": "string",
+      "description": "Customer Master's authoritative external code for the tenant (tenants.display_code). Optional in the schema, but producers MUST populate it when publishing. Readability only, never a substitute for tenant_id."
+    },
+    "source_id": {
+      "type": "string",
+      "description": "The source this mapping applies to."
+    },
+    "mapping_version_id": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Version number of the mapping. Monotonically increasing per (tenant, source). The mapping_version_id stamped on canonical rows (B1)."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["staged", "active", "deprecated"],
+      "description": "Current status after the change. staged: visible to onboarding review and shadow rollout, NOT used in production processing. active: used by the streaming-consumer for live processing. deprecated: retained for replay and audit, not used for new chunks."
+    },
+    "previous_status": {
+      "type": "string",
+      "enum": ["staged", "active", "deprecated"],
+      "description": "Status before the change. Absent for event_type=created."
+    },
+    "previous_active_version_id": {
+      "type": "integer",
+      "description": "For event_type=promoted, the mapping_version_id of the previously active mapping (now deprecated). Lets consumers correlate the old->new transition. Absent for other event types."
+    },
+    "changed_by": {
+      "type": "string",
+      "description": "User_id or service identifier that made the change. From dis-ui-server auth context."
+    },
+    "changed_ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the change was committed to config.source_mappings."
+    }
+  },
+  "additionalProperties": false
+}

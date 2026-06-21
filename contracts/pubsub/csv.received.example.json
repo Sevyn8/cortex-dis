@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "trace_id": "019e8d88-4e76-7911-bb77-d8fcba1808a6",
+  "tenant_id": "019e5e3c-b5d3-705f-9002-2451c4ca2626",
+  "store_id": "019e5f10-2a3b-7c4d-8e5f-6a7b8c9d0e1f",
+  "tenant_display_code": "buc-ees",
+  "store_code": "buc-ees-0001",
+  "source_id": "shopify_pos_v2",
+  "template_id": "019e98c9-df80-752b-b385-fb407f6363d8",
+  "upload_session_id": "us_4f1d2b9c03ae",
+  "gcs_uri": "gs://ithina-bronze-raw/tenant/019e5e3c-b5d3-705f-9002-2451c4ca2626/source/shopify_pos_v2/yyyy=2026/mm=06/dd=04/019e8d88-4e76-7911-bb77-d8fcba1808a6.csv",
+  "received_ts": "2026-06-04T10:18:42.317Z"
+}

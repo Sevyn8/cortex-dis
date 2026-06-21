@@ -1,0 +1,23 @@
+[project]
+name = "dis-mapping"
+version = "0.0.0"
+description = "DIS mapping engine: pure four-sub-stage transform (rename -> normalize -> cast -> derive) over a mapping and a parsed in-memory chunk, producing a partial canonical contribution (slice-05; D4, D8, D20)."
+requires-python = ">=3.12"
+dependencies = [
+  # Errors (DisError root), structured logging adapter.
+  "dis-core",
+  # The chunk surface (per-chunk engine, OQ1). Pinned compatible-range around the
+  # lockfile-resolved 1.41.2 — dtype behaviour (esp. Decimal) must not drift; the
+  # SAME pin is declared in dis-validation so the two libs cannot resolve to
+  # different Polars versions. PyArrow is deliberately NOT a direct dependency.
+  "polars>=1.41,<2.0",
+  # SourceMapping / TransformSpec models.
+  "pydantic>=2.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dis_mapping"]

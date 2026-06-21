@@ -1,0 +1,38 @@
+[project]
+name = "csv-ingest-worker"
+version = "0.0.0"
+description = "DIS CSV upload Phase-2 worker (Slice 9b, D36/D54): consumes csv.received from dis-ui-server, trusts the event's resolved UUID identity, reads (never mints) trace_id, runs the DuckDB structural preflight, wires the dis-pii fail-loud gate, writes one metadata-only bronze row via dis-rls, and publishes ingress.ready after bronze lands (D5). No identity resolution (Slice 13), no mapping/canonical (Slice 10)."
+requires-python = ">=3.12"
+dependencies = [
+  # DisError root (CsvIngestError family), UUIDv7, trace_id read, timestamps, logging.
+  "dis-core",
+  # The bronze write goes through the RLS-aware session (hard rules 1 & 12),
+  # inheriting the current_database()=='ithina_dis_db' + NOBYPASSRLS target guard.
+  "dis-rls",
+  # The fail-loud PII gate (hard rule 2) — wired, not extended (D40).
+  "dis-pii",
+  # GCS object read + split_object_uri/parse_object_path (hard rule 9, D53).
+  "dis-storage",
+  # Fire-and-forget audit to Cloud SQL audit.events (hard rule 11, D43/D44).
+  "dis-audit",
+  # Structural preflight (D13/D16). Behaviour-sensitive: contained in preflight.py
+  # with canary tests asserting the relied-on sniff behaviour (Slice 5 pattern).
+  "duckdb>=1.0",
+  # csv.received subscriber + ingress.ready publisher (emulator-or-ambient, slice 40a).
+  "google-cloud-pubsub>=2.23",
+  # The toggled readiness-healthz server (slice 40a): RUN_HEALTH_SERVER=true ->
+  # /healthz alongside the pull loop (Cloud Run Service mode); off -> pure loop.
+  "uvicorn>=0.32",
+  # Async engine + connection for the bronze write (psycopg v3 async).
+  "sqlalchemy[asyncio]>=2.0.36",
+  "psycopg[binary]>=3.2",
+  # Typed envelope models (csv.received in, ingress.ready out).
+  "pydantic>=2.9",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/csv_ingest_worker"]

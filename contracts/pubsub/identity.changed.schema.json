@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ithina.dis.contracts.pubsub.identity.changed.v1",
+  "title": "identity.changed",
+  "description": "Published by the Identity Service when admin database writes change a tenant or store record. Consumed by the mirror-sync-consumer to update identity_mirror tables in the data-platform Postgres so canonical FKs stay valid.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "event_id",
+    "event_type",
+    "entity",
+    "entity_id",
+    "source_ts",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "event_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this event. Used by the mirror-sync-consumer for idempotency."
+    },
+    "event_type": {
+      "type": "string",
+      "enum": ["created", "updated", "deactivated"],
+      "description": "What kind of change occurred. Deactivation is soft-delete; no hard-delete event exists."
+    },
+    "entity": {
+      "type": "string",
+      "enum": ["tenant", "store"],
+      "description": "Which entity type changed."
+    },
+    "entity_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal UUID of the affected row: the tenant_id (for entity=tenant) or store_id (for entity=store). Identical to Customer Master core.tenants.id / core.stores.id."
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Owning tenant UUID. For entity=tenant, same as entity_id. For entity=store, the parent tenant."
+    },
+    "source_ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of the change in the admin database. Used as conflict-resolution key (older source_ts never overwrites newer)."
+    },
+    "payload": {
+      "type": "object",
+      "description": "The current state of the entity. Shape depends on entity type. The mirror-sync-consumer projects only the fields that identity_mirror tables care about.",
+      "properties": {
+        "name": { "type": "string" },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle status replicated verbatim from Customer Master (tenants: e.g. ACTIVE/SUSPENDED/TERMINATED/ONBOARDING; stores: e.g. ACTIVE/INACTIVE/CLOSED). Replaces the prior is_active boolean; identity_mirror stores lifecycle as status, not is_active (decisions.md D46)."
+        },
+        "display_code": {
+          "type": "string",
+          "description": "For entity=tenant: Customer Master's authoritative external code (tenants.display_code). Projected into identity_mirror.tenants.display_code by the mirror-sync-consumer."
+        },
+        "store_code": {
+          "type": "string",
+          "description": "For entity=store: Customer Master's authoritative external code (stores.store_code). Projected into identity_mirror.stores.store_code by the mirror-sync-consumer. Nullable at source."
+        },
+        "metadata": {
+          "type": "object",
+          "description": "Free-form additional fields. Receiver-side resolve methods may use; mirror-sync-consumer ignores.",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

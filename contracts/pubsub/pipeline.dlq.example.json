@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "dlq_id": "d7e8f9a0-b1c2-4d3e-9f0a-b1c2d3e4f5a6",
+  "reason": "cloud_sql_unhealthy",
+  "reason_detail": "SELECT 1 probe timed out after 100ms; circuit breaker opened at 2026-06-04T14:35:12Z",
+  "diverted_ts": "2026-06-04T14:35:14.230Z",
+  "tenant_id": "019e5e3c-b5d3-705f-9002-2451c4ca2626",
+  "tenant_display_code": "buc-ees",
+  "batch": {
+    "row_count": 487,
+    "trace_ids": [
+      "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      "8a1f2b3c-4d5e-6f7a-8b9c-0d1e2f3a4b5c"
+    ],
+    "rows_ref": "gs://ithina-dlq/tenant/019e5e3c-b5d3-705f-9002-2451c4ca2626/yyyy=2026/mm=06/dd=04/dlq_d7e8f9a0-b1c2-4d3e-9f0a-b1c2d3e4f5a6.parquet",
+    "mapping_version_ids": [7]
+  },
+  "retry_attempts": 0
+}

@@ -1,0 +1,18 @@
+[project]
+name = "dis-canonical"
+version = "0.0.0"
+description = "DIS canonical schema models (Pydantic). In-memory representation of the canonical.* tables, hand-aligned to the live ithina_dis_db schema."
+requires-python = ">=3.12"
+dependencies = [
+  # Pydantic v2 models.
+  "pydantic>=2.9",
+  # Internal UUID-key identifier aliases (TenantId/StoreId/TraceId/MappingVersionId).
+  "dis-core",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dis_canonical"]

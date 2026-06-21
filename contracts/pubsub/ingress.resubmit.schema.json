@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ithina.dis.contracts.pubsub.ingress.resubmit.v1",
+  "title": "ingress.resubmit",
+  "description": "Published when a quarantined chunk is resubmitted for re-processing. Two flavors: (a) replay of the original bronze payload through the current mapping; (b) fresh payload uploaded by the tenant to replace the quarantined one. Consumed by the streaming consumer; separate from ingress.ready so resubmit traffic is observable independently.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "trace_id",
+    "parent_trace_id",
+    "tenant_id",
+    "store_id",
+    "source_id",
+    "resubmit_type",
+    "bronze_ref",
+    "gcs_uri",
+    "received_ts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1
+    },
+    "trace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "New trace_id for this resubmit event. Different from the original."
+    },
+    "parent_trace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Trace_id of the quarantined chunk being resubmitted. Required."
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal tenant UUID, identical to Customer Master core.tenants.id and identity_mirror.tenants.tenant_id. Load-bearing identity."
+    },
+    "store_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal store UUID, identical to Customer Master core.stores.id and identity_mirror.stores.store_id. Load-bearing identity."
+    },
+    "tenant_display_code": {
+      "type": "string",
+      "description": "Customer Master's authoritative external code for the tenant (tenants.display_code). Optional in the schema, but producers MUST populate it when publishing. Readability only, never a substitute for tenant_id."
+    },
+    "store_code": {
+      "type": "string",
+      "description": "Customer Master's authoritative external code for the store (stores.store_code). Optional in the schema, but producers MUST populate it when present in Customer Master. Readability only, never a substitute for store_id."
+    },
+    "source_id": {
+      "type": "string"
+    },
+    "resubmit_type": {
+      "type": "string",
+      "enum": ["replay", "fixed_file"],
+      "description": "replay: re-process the original bronze payload (bronze_ref and gcs_uri match parent). fixed_file: tenant uploaded a corrected file (new bronze_ref and gcs_uri)."
+    },
+    "bronze_ref": {
+      "type": "string",
+      "format": "uuid",
+      "description": "For replay: same as parent's bronze_ref. For fixed_file: new bronze row created by the receiver path for the corrected upload."
+    },
+    "gcs_uri": {
+      "type": "string",
+      "pattern": "^gs://[a-z0-9-]+/tenant/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/source/[^/]+/yyyy=[0-9]{4}/mm=[0-9]{2}/dd=[0-9]{2}/[^/]+\\.(csv|json)$",
+      "description": "Full GCS URI of the payload. Path scheme enforced by libs/dis-storage; the tenant segment is the internal tenant UUID."
+    },
+    "received_ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this resubmit was initiated."
+    },
+    "initiated_by": {
+      "type": "string",
+      "enum": ["tenant", "ops"],
+      "description": "Who triggered the resubmit. Optional; defaults to tenant if absent."
+    },
+    "chain_depth": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "How many resubmit hops deep this chunk is. Hard cap of 3 enforced by the publisher; messages exceeding this are rejected at validation."
+    },
+    "reason": {
+      "type": "string",
+      "description": "Free-text note from the operator or the UI. Optional."
+    }
+  },
+  "additionalProperties": false
+}

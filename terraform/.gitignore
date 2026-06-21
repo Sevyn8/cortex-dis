@@ -1,0 +1,19 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+
+# Do not commit tfvars that may carry real/sensitive values.
+# Commit an example instead (terraform.tfvars.example).
+*.tfvars
+!*.tfvars.example
+
+# Plan output
+*.tfplan
+
+# OS / editor
+.DS_Store
+*.swp

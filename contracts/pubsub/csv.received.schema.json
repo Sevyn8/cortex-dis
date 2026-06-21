@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ithina.dis.contracts.pubsub.csv.received.v1",
+  "title": "csv.received",
+  "description": "Published by dis-ui-server once a tenant's CSV upload is saved in GCS (Slice 8: the file streams synchronously through dis-ui-server, which writes the object itself — no signed PUT URL, no upload-session object, no completion detection). Consumed by the csv-ingest-worker to begin Phase 2 ingest (preflight, PII gate, bronze write, ingress.ready publish). This is the trigger boundary between the UI-facing Phase 1 (dis-ui-server's csv-uploads endpoint, which mints trace_id and writes the object) and the asynchronous Phase 2 worker. Distinct from ingress.ready: csv.received precedes the bronze write and carries no bronze_ref; ingress.ready is published by the worker after bronze lands.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "trace_id",
+    "tenant_id",
+    "store_id",
+    "source_id",
+    "template_id",
+    "upload_session_id",
+    "gcs_uri",
+    "received_ts"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version. Incremented only on breaking changes."
+    },
+    "trace_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for this ingress, minted by dis-ui-server's csv-uploads endpoint at Phase 1 (hard rule 4: trace_id is generated upstream and never minted mid-pipeline). The worker reads this value and propagates it; it does not mint a new one."
+    },
+    "tenant_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal tenant UUID, identical to Customer Master core.tenants.id and identity_mirror.tenants.tenant_id. Load-bearing identity: the worker writes bronze and sets RLS context with this."
+    },
+    "store_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Internal store UUID, identical to Customer Master core.stores.id and identity_mirror.stores.store_id. Load-bearing identity. An upload is bound to exactly one store (resolved from the request's store_code at Phase 1)."
+    },
+    "tenant_display_code": {
+      "type": "string",
+      "description": "Customer Master's authoritative external code for the tenant (tenants.display_code, e.g. 'buc-ees'). Optional in the schema, but producers MUST populate it when publishing; it exists for human and ops readability, never as a substitute for tenant_id. Not the load-bearing identity."
+    },
+    "store_code": {
+      "type": "string",
+      "description": "Customer Master's authoritative external code for the store (stores.store_code). Optional in the schema, but producers MUST populate it when publishing (when present in Customer Master; the source column is nullable). Readability only, never a substitute for store_id."
+    },
+    "source_id": {
+      "type": "string",
+      "description": "Source registration identifier (POS type, ERP type, etc.) for the upload. Derived at Phase 1 from the mapping template's lineage (a template belongs to exactly one (tenant, source))."
+    },
+    "template_id": {
+      "type": "string",
+      "format": "uuid",
+      "description": "The mapping template (config.source_mappings template lineage, D68) this CSV was uploaded against, validated ACTIVE for the token tenant at Phase 1. Carried end to end (worker passes it to ingress.ready and persists it to bronze for replay lineage) but NOT consumed for mapping selection until Slice 8a (D71: the streaming consumer remains template-unaware; hard gate, no second ACTIVE template per source before 8a)."
+    },
+    "upload_session_id": {
+      "type": "string",
+      "pattern": "^us_[a-z0-9]{12}$",
+      "description": "The idempotency/lineage id for the tenant's upload action (the source_payload_id component of the worker's D58 dedup key). Since Slice 8 there is no upload-session object: dis-ui-server derives this deterministically per logical upload (us_ + first 12 lowercase-hex chars of SHA-256 over tenant_id|store_id|template_id|payload_sha256), so a client retry of the same bytes re-derives the same id and the worker's 24h dedup collapses it. The worker does NOT resolve identity from this (identity is carried on this message and trusted). Distinct from trace_id: trace_id traces this pipeline run, upload_session_id traces the tenant's upload action."
+    },
+    "gcs_uri": {
+      "type": "string",
+      "pattern": "^gs://[a-z0-9-]+/tenant/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/source/[^/]+/yyyy=[0-9]{4}/mm=[0-9]{2}/dd=[0-9]{2}/[^/]+\\.csv$",
+      "description": "Full GCS URI of the saved CSV payload. Path scheme enforced by libs/dis-storage; the tenant segment is the internal tenant UUID (not an external code), because the UUID is immutable while external codes are user-editable."
+    },
+    "received_ts": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when the CSV save in GCS was confirmed and this event was published."
+    },
+    "delimiter": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1,
+      "default": ",",
+      "description": "The single-character CSV field separator. Additive/optional field (Slice 16f): the schema and model carry it for contract symmetry with ingress.ready, but dis-ui-server does NOT populate it yet (it is detected downstream by the worker's preflight, which is the single delimiter detector — Approach B). Defaults to ',' on every real csv.received message until a future dis-ui slice populates it; the worker never reads this field (it detects fresh in preflight)."
+    }
+  },
+  "additionalProperties": false
+}

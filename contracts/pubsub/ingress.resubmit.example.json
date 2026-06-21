@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "trace_id": "9c8b7a6d-5e4f-3a2b-1c0d-e9f8a7b6c5d4",
+  "parent_trace_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "tenant_id": "019e5e3c-b5d3-705f-9002-2451c4ca2626",
+  "store_id": "019e5f10-2a3b-7c4d-8e5f-6a7b8c9d0e1f",
+  "tenant_display_code": "buc-ees",
+  "store_code": "buc-ees-0001",
+  "source_id": "shopify_pos_v2",
+  "resubmit_type": "replay",
+  "bronze_ref": "a1b2c3d4-e5f6-4a5b-9c0d-1e2f3a4b5c6d",
+  "gcs_uri": "gs://ithina-bronze-raw/tenant/019e5e3c-b5d3-705f-9002-2451c4ca2626/source/shopify_pos_v2/yyyy=2026/mm=06/dd=04/f47ac10b-58cc-4372-a567-0e02b2c3d479.csv",
+  "received_ts": "2026-06-05T09:15:42.000Z",
+  "initiated_by": "ops",
+  "chain_depth": 1,
+  "reason": "Mapping bug fixed; replaying chunks from 2026-06-04"
+}

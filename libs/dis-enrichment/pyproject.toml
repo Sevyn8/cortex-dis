@@ -1,0 +1,20 @@
+[project]
+name = "dis-enrichment"
+version = "0.0.0"
+description = "DIS enrichment engine: pure lookup-enrichment over a canonical contribution. Owns a registry of canonical fields resolved from an authoritative internal source (handed in by the consumer); the lib's value wins over the mapping. Snapshot/current-position only this slice (slice-5b; D94, D95, D98)."
+requires-python = ">=3.12"
+dependencies = [
+  # Errors (DisError root: EnrichmentError), structured logging adapter.
+  "dis-core",
+  # The contribution surface (frame-in/frame-out, mirroring dis-mapping). SAME pin
+  # as dis-mapping/dis-validation so the pipeline libs cannot resolve to different
+  # Polars versions. PyArrow is deliberately NOT a direct dependency.
+  "polars>=1.41,<2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/dis_enrichment"]

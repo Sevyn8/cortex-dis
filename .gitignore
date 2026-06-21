@@ -1,0 +1,38 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+*.egg-info/
+dist/
+build/
+.env
+.env.local
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+docs/workflow.md
+tfplan
+*.tfplan
+docs/scratch/
+/cloud-sql-proxy
+
+# Local dev JWTs — signed tokens, never commit
+scripts/jwt/tokens/
+
+# pipeline-check operator tooling: CSVs, mapping specs, run outputs (never tracked)
+scripts/pipeline-check/local/
+
+# Generated local-DB schema dump (reproducible from migrations)
+docs/schemas/
+
+# CC prompt scratch
+docs/slices/cc-prompt-*.plan.md
