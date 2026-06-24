@@ -30,7 +30,7 @@ tables:
   - key: store_sku_current_position
     template_type: snapshot
     semantics: merge_upsert
-    sink: canonical_retail.store_sku_current_position
+    sink: canonical.store_sku_current_position
     natural_key: [store_id, sku_id, sku_variant, sku_lot_batch]
     fields:
       # ---- system profile: db_generated / consumer_injected ----
