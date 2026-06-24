@@ -20,7 +20,7 @@ def test_loads_the_retail_fixture() -> None:
     assert table.key == "store_sku_current_position"
     assert table.template_type == "snapshot"
     assert table.semantics == "merge_upsert"
-    assert table.sink == "canonical_retail.store_sku_current_position"
+    assert table.sink == "canonical.store_sku_current_position"
     assert table.natural_key == ("store_id", "sku_id", "sku_variant", "sku_lot_batch")
     assert len(table.fields) == 43
 
