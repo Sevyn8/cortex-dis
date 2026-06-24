@@ -68,3 +68,12 @@ stands.
 - Inference, CSVs to draft IR (A3).
 - The override editor and console surfaces (A4).
 - The CM publish gate and tenant-to-vertical binding (A5).
+
+## Watch item: entity-key alias coupling (D37)
+
+The IR's `type: uuid` / `type: int` reproduce the entity-key and provenance fields
+(tenant_id, store_id, trace_id, mapping_version_id) faithfully ONLY while dis_core
+keeps these as plain aliases (TenantId = UUID, MappingVersionId = int). If D37 ever
+promotes them to NewType, type_signature will correctly diverge and the prover goes
+red. The fix at that point is an IR alias-reference type plus a generator update; it
+is not an A1 defect. Self-closing: the prover is the gate that surfaces it.
