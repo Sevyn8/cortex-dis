@@ -13,6 +13,7 @@ members = [
     "csv-ingest-worker",
     "dis-audit",
     "dis-canonical",
+    "dis-codegen",
     "dis-core",
     "dis-enrichment",
     "dis-mapping",
@@ -659,6 +660,23 @@ dependencies = [
 requires-dist = [
     { name = "dis-core", editable = "libs/dis-core" },
     { name = "pydantic", specifier = ">=2.9" },
+]
+
+[[package]]
+name = "dis-codegen"
+version = "0.0.0"
+source = { editable = "tools/codegen" }
+dependencies = [
+    { name = "dis-canonical" },
+    { name = "dis-validation" },
+    { name = "pyyaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dis-canonical", editable = "libs/dis-canonical" },
+    { name = "dis-validation", editable = "libs/dis-validation" },
+    { name = "pyyaml", specifier = ">=6.0" },
 ]
 
 [[package]]
@@ -1716,6 +1734,7 @@ dev = [
     { name = "csv-ingest-worker" },
     { name = "dis-audit" },
     { name = "dis-canonical" },
+    { name = "dis-codegen" },
     { name = "dis-core" },
     { name = "dis-enrichment" },
     { name = "dis-mapping" },
@@ -1777,6 +1796,7 @@ dev = [
     { name = "csv-ingest-worker", editable = "services/csv-ingest-worker" },
     { name = "dis-audit", editable = "libs/dis-audit" },
     { name = "dis-canonical", editable = "libs/dis-canonical" },
+    { name = "dis-codegen", editable = "tools/codegen" },
     { name = "dis-core", editable = "libs/dis-core" },
     { name = "dis-enrichment", editable = "libs/dis-enrichment" },
     { name = "dis-mapping", editable = "libs/dis-mapping" },

@@ -70,7 +70,8 @@ MYPY_PACKAGES = \
 	services/mirror-sync-consumer \
 	services/streaming-consumer \
 	tests \
-	tools
+	tools/local \
+	tools/codegen
 
 mypy:
 	@for pkg in $(MYPY_PACKAGES); do \

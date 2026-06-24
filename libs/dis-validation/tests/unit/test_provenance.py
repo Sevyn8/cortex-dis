@@ -27,7 +27,12 @@ from dis_canonical import (
     StoreSkuSignalHistory,
 )
 from dis_core.errors import DisError, SuiteDriftError
-from dis_validation import PROVENANCE, assert_no_drift, mapping_produced_columns
+from dis_validation import (
+    PROVENANCE,
+    assert_no_drift,
+    assert_partition_consistent,
+    mapping_produced_columns,
+)
 from dis_validation.provenance import ColumnProvenance
 
 # Pre-widened key for monkeypatch.setitem: pytest's invariant dict[K, V] cannot
@@ -175,3 +180,17 @@ def test_guard_goes_red_on_double_classification(monkeypatch: pytest.MonkeyPatch
 def test_drift_errors_are_dis_errors() -> None:
     with pytest.raises(DisError):
         mapping_produced_columns(StoreSkuSignalHistory)
+
+
+def test_assert_partition_consistent_passes_for_an_explicit_correct_partition() -> None:
+    # The registry partition, passed in explicitly, against the live model: no registry
+    # lookup, no mutation of process-global state, must not raise.
+    current = PROVENANCE[StoreSkuCurrentPosition]
+    assert_partition_consistent(StoreSkuCurrentPosition, current)
+
+
+def test_assert_partition_consistent_goes_red_on_a_stale_explicit_partition() -> None:
+    current = PROVENANCE[StoreSkuCurrentPosition]
+    mutated = replace(current, mapping_produced=current.mapping_produced | {"dropped_column"})
+    with pytest.raises(SuiteDriftError, match="stale"):
+        assert_partition_consistent(StoreSkuCurrentPosition, mutated)

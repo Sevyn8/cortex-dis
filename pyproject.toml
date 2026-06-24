@@ -90,6 +90,7 @@ dev = [
   "csv-ingest-worker",
   "streaming-consumer",
   "dis-ui-server",
+  "dis-codegen",
 
   # Import-graph contracts (slice-05): forbidden imports between the pure
   # pipeline libs and the I/O-bearing libs. Run via `make lint` (lint-imports).
@@ -126,6 +127,7 @@ known-first-party = [
   "csv_ingest_worker",
   "streaming_consumer",
   "dis_ui_server",
+  "dis_codegen",
 ]
 
 [tool.mypy]
@@ -253,6 +255,7 @@ members = [
   "services/csv-ingest-worker",
   "services/streaming-consumer",
   "services/dis-ui-server",
+  "tools/codegen",
 ]
 
 [tool.uv.sources]
@@ -274,3 +277,4 @@ mirror-sync-consumer = { workspace = true }
 csv-ingest-worker = { workspace = true }
 streaming-consumer = { workspace = true }
 dis-ui-server = { workspace = true }
+dis-codegen = { workspace = true }

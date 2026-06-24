@@ -286,7 +286,18 @@ def assert_no_drift(model: type[BaseModel]) -> None:
             "before building a canonical-shape suite for it",
             model=model.__name__,
         )
+    assert_partition_consistent(model, provenance)
 
+
+def assert_partition_consistent(model: type[BaseModel], provenance: ColumnProvenance) -> None:
+    """Assert an EXPLICIT ``provenance`` partitions ``model.model_fields`` exactly.
+
+    The same both-directions check as :func:`assert_no_drift` (disjoint sets, every
+    model field classified, no stale entry), but run against a partition passed in
+    rather than the ``PROVENANCE`` global. This lets a generated partition be verified
+    without registering it or mutating the registry (Atlas A1 generator prover). Errors
+    (never skips) on any mismatch, identical to ``assert_no_drift``.
+    """
     sets = {
         "consumer_injected": provenance.consumer_injected,
         "db_generated": provenance.db_generated,

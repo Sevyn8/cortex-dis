@@ -1,0 +1,93 @@
+# Hand-authored A1 fixture IR: retail store_sku_current_position ONLY.
+#
+# Transcribed from the live dis-canonical model
+# (libs/dis-canonical/src/dis_canonical/hot/store_sku_current_position.py) and the
+# live dis_validation provenance partition
+# (libs/dis-validation/src/dis_validation/provenance.py, StoreSkuCurrentPosition).
+# This is the known-good input that proves the generator: regenerating from it must
+# reconcile to the live model and partition with zero regression.
+#
+# produced_by mirrors dis_validation verbatim (five-way). nullable/default mirror the
+# live model + DDL (incl. migration 0012 which made unit_cost and product_category
+# nullable). mandatory mirrors mandatory_mapping_produced intent (currency is
+# enrichment-guaranteed, so not mandatory though it is mapping-produced and required).
+
+vertical: retail
+schema_version: 3
+status: published
+system_profile: dis.v1
+
+types:
+  money:         { base: decimal, precision: 12, scale: 4 }   # Numeric12_4
+  qty:           { base: decimal, precision: 14, scale: 3 }   # Numeric14_3
+  currency_code: { base: str, min_length: 3, max_length: 3 }  # CurrencyCode / char(3)
+
+enums:
+  tax_treatment: [INCLUSIVE, EXCLUSIVE]
+  expiry_source: [PRINTED, SCANNED, ESTIMATED, CV_DETECTED]
+
+tables:
+  - key: store_sku_current_position
+    template_type: snapshot
+    semantics: merge_upsert
+    sink: canonical_retail.store_sku_current_position
+    natural_key: [store_id, sku_id, sku_variant, sku_lot_batch]
+    fields:
+      # ---- system profile: db_generated / consumer_injected ----
+      - { name: id,                    type: uuid,        nullable: false, default: "uuidv7()", produced_by: db_generated }
+      - { name: tenant_id,             type: uuid,        nullable: false, produced_by: consumer_injected }
+      - { name: store_id,             type: uuid,        nullable: false, produced_by: consumer_injected }  # entity key, FK identity_mirror.stores
+
+      # ---- SKU identity (mapping_produced) ----
+      - { name: sku_id,                type: str,  max_length: 128, nullable: false, mandatory: true,  produced_by: mapping_produced }
+      - { name: sku_variant,           type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: sku_lot_batch,         type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: barcode,               type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+
+      # ---- catalogue context (mapping_produced) ----
+      - { name: product_name,          type: str,  max_length: 128, nullable: false, mandatory: true,  produced_by: mapping_produced }
+      - { name: product_description,   type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: product_category,      type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }   # 0012: nullable
+      - { name: product_sub_category,  type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: product_department,    type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: supplier_id,           type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: packaging_type,        type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: sku_size,              type: { base: decimal, precision: 8, scale: 3 }, nullable: true, produced_by: mapping_produced }
+      - { name: unit_of_measure,       type: str,  max_length: 64,  nullable: true,  produced_by: mapping_produced }
+
+      # ---- pricing / cost ----
+      - { name: current_retail_price,  type: money, nullable: false, mandatory: true, produced_by: mapping_produced }
+      - { name: unit_cost,             type: money, nullable: true,  produced_by: mapping_produced }   # 0012: nullable
+      - { name: promo_price,           type: money, nullable: true,  produced_by: mapping_produced }
+      - { name: promo_identifier,      type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: yesterday_retail_price, type: money, nullable: true, produced_by: compute_owned }
+      - { name: tax_treatment,         type: enum, enum_ref: tax_treatment, nullable: false, produced_by: enrichment_produced }
+
+      # ---- inventory / lifecycle ----
+      - { name: stock_qty,             type: qty,  nullable: true,  produced_by: mapping_produced }
+      - { name: lead_time_days,        type: smallint, nullable: true, produced_by: mapping_produced }
+      - { name: expiry_date,           type: date, nullable: true,  produced_by: mapping_produced }
+      - { name: receipt_date,          type: date, nullable: true,  produced_by: mapping_produced }
+      - { name: expiry_source,         type: enum, enum_ref: expiry_source, nullable: true, produced_by: mapping_produced }
+      - { name: expiry_confidence,     type: { base: decimal, precision: 3, scale: 2 }, nullable: true, produced_by: mapping_produced }
+      - { name: regulatory_flag,       type: bool, nullable: true, default: "false", produced_by: mapping_produced }
+      - { name: regulatory_type,       type: str,  max_length: 128, nullable: true,  produced_by: mapping_produced }
+      - { name: currency,              type: currency_code, nullable: false, mandatory: false, produced_by: mapping_produced }
+      - { name: reorder_point,         type: qty,  nullable: true,  produced_by: mapping_produced }
+      - { name: sku_status,            type: str,  max_length: 32,  nullable: true,  produced_by: mapping_produced }
+
+      # ---- daily-computed derived signals (compute_owned) ----
+      - { name: velocity_7day,         type: { base: decimal, precision: 10, scale: 4 }, nullable: true, produced_by: compute_owned }
+      - { name: stock_age_days,        type: smallint, nullable: true, produced_by: compute_owned }
+      - { name: unit_cost_trend_30day, type: money, nullable: true, produced_by: compute_owned }
+      - { name: attribute_staleness_map, type: jsonb, nullable: true, produced_by: compute_owned }
+
+      # ---- event-time-wins reference (consumer_injected) ----
+      - { name: last_source_event_at,  type: timestamptz, nullable: true, produced_by: consumer_injected }
+
+      # ---- provenance (consumer_injected / db_generated) ----
+      - { name: mapping_version_id,    type: bigint, nullable: false, produced_by: consumer_injected }
+      - { name: trace_id,              type: uuid,  nullable: false, produced_by: consumer_injected }
+      - { name: dis_channel,           type: str,  max_length: 32, nullable: false, produced_by: consumer_injected }
+      - { name: last_updated_at,       type: timestamptz, nullable: false, default: "now()", produced_by: db_generated }
+      - { name: ingest_metadata,       type: jsonb, nullable: true, produced_by: consumer_injected }
