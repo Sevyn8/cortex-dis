@@ -16,20 +16,31 @@ items that A2 (generated-DDL-vs-live-schema reconciliation, with a DB) un-parks.
 
 from __future__ import annotations
 
+from dis_codegen.draft_ir import (
+    SNAPSHOT_SYSTEM_PROFILE,
+    assemble_draft_ir,
+    emit_draft_ir,
+    validate_draft_ir,
+)
 from dis_codegen.generate import DdlSubset, render_ddl, render_model, render_provenance
-from dis_codegen.ir import FieldIR, ProducedBy, SchemaIR, TableIR, TypeIR, load_ir
+from dis_codegen.ir import FieldIR, FieldProvenance, ProducedBy, SchemaIR, TableIR, TypeIR, load_ir
 from dis_codegen.reflect import type_signature
 
 __all__ = [
+    "SNAPSHOT_SYSTEM_PROFILE",
     "DdlSubset",
     "FieldIR",
+    "FieldProvenance",
     "ProducedBy",
     "SchemaIR",
     "TableIR",
     "TypeIR",
+    "assemble_draft_ir",
+    "emit_draft_ir",
     "load_ir",
     "render_ddl",
     "render_model",
     "render_provenance",
     "type_signature",
+    "validate_draft_ir",
 ]

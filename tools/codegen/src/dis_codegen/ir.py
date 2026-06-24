@@ -41,6 +41,24 @@ class TypeIR:
 
 
 @dataclass(frozen=True)
+class FieldProvenance:
+    """Per-field provenance (spec section 3) plus the A3 presence/sample stamps.
+
+    ``introduced_in``/``source_headers`` are the section-3 provenance; A3 adds
+    ``present_in_files``/``total_files`` (the IR section 11 Q5 N-of-M presence
+    stamp) and ``rows_profiled`` (the sample size), so a thin one-file inference is
+    visibly distinguishable from a well-grounded one. Carried by the draft IR;
+    the A1 generator never reads it (additive, A1-inert).
+    """
+
+    introduced_in: int = 1
+    source_headers: tuple[str, ...] = ()
+    present_in_files: int = 0
+    total_files: int = 0
+    rows_profiled: int = 0
+
+
+@dataclass(frozen=True)
 class FieldIR:
     """One canonical column (spec section 3, per field)."""
 
@@ -58,6 +76,14 @@ class FieldIR:
     display_name: str | None = None
     description: str | None = None
     section: str | None = None
+    # Section-3 fields the A1 fixture did not exercise; additive and A1-inert (the
+    # generator never reads them). pii is the section-3 PII class; enum_candidate is
+    # the A3 draft-only flagged enum vocabulary (a low-cardinality column proposed as
+    # a possible enum, kept as a curated candidate so the base type stays str until a
+    # human ratifies it); provenance carries the section-3 + presence/sample stamps.
+    pii: str | None = None
+    enum_candidate: tuple[str, ...] = ()
+    provenance: FieldProvenance | None = None
 
 
 @dataclass(frozen=True)
@@ -117,6 +143,21 @@ def _field_from_dict(raw: dict[str, Any]) -> FieldIR:
         display_name=raw.get("display_name"),
         description=raw.get("description"),
         section=raw.get("section"),
+        pii=raw.get("pii"),
+        enum_candidate=tuple(raw.get("enum_candidate", ())),
+        provenance=_provenance_from_dict(raw.get("provenance")),
+    )
+
+
+def _provenance_from_dict(raw: dict[str, Any] | None) -> FieldProvenance | None:
+    if raw is None:
+        return None
+    return FieldProvenance(
+        introduced_in=int(raw.get("introduced_in", 1)),
+        source_headers=tuple(raw.get("source_headers", ())),
+        present_in_files=int(raw.get("present_in_files", 0)),
+        total_files=int(raw.get("total_files", 0)),
+        rows_profiled=int(raw.get("rows_profiled", 0)),
     )
 
 

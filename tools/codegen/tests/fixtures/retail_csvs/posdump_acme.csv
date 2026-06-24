@@ -1,0 +1,5 @@
+sku_id,sku_variant,sku_lot_batch,barcode,product_name,product_description,product_category,product_sub_category,product_department,supplier_id,packaging_type,sku_size,unit_of_measure,current_retail_price,unit_cost,promo_price,promo_identifier,currency
+SKU-1001,RED,LOT-A,501234-000001,Whole Milk 1L,Fresh whole milk 1 litre carton,Dairy,Milk,Grocery,SUP-001,each,1.000,each,19.99,12.0000,17.99,PROMO-XMAS,EUR
+SKU-1002,,LOT-B,501234-000002,Cheddar 200g,Mature cheddar block,Dairy,Cheese,Grocery,SUP-002,pack,0.200,kg,5.49,3.1000,4.99,PROMO-XMAS,EUR
+SKU-1003,LARGE,LOT-C,501234-000003,Olive Oil 750ml,Extra virgin olive oil,Pantry,Oils,Grocery,SUP-003,bottle,0.750,litre,8.25,5.5000,7.50,PROMO-NY,USD
+SKU-1004,BLUE,LOT-D,501234-000004,Sea Salt 500g,Coarse sea salt,Pantry,Seasoning,Grocery,SUP-001,box,0.500,kg,2.10,0.9000,1.99,PROMO-NY,EUR
