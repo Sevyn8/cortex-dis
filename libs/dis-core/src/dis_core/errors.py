@@ -415,6 +415,31 @@ class HotPositionMissingError(DisError):
         self.miss_count = miss_count
 
 
+class SinkResolutionError(DisError):
+    """A canonical sink could not be resolved to a physical table (Atlas A2).
+
+    Raised by the streaming consumer's ``resolve_sink`` when a vertical has no
+    declared namespace (the namespace is declared data per vertical, never computed
+    by suffixing) or a ``template_type`` maps to no canonical table. A fail-loud
+    config/contract guard (no silent fallback, code-quality rule 4): in production
+    the stubbed ``vertical_for_tenant`` always yields ``retail`` and the template
+    type comes from the in-code vocabulary, so reaching this is a programming error,
+    not a data failure. Carries the offending ``vertical`` / ``template_type`` only.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        vertical: str | None = None,
+        template_type: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.vertical = vertical
+        self.template_type = template_type
+
+
 # -- Mirror Sync errors (Slice 7) ----------------------------------------------
 # Raised by the mirror-sync-consumer service (DB-pull mode), which reads Customer
 # Master's Postgres under a platform read context and upserts into identity_mirror.
