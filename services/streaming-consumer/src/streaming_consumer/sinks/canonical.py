@@ -56,12 +56,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from dis_canonical import StoreSkuChangeEvent, StoreSkuCurrentPosition, StoreSkuSaleEvent
-from dis_core.errors import HotPositionMissingError
+from dis_core.errors import HotPositionMissingError, SinkResolutionError
 from dis_core.ids import new_uuid7
 from dis_enrichment import CURRENT_POSITION, enrichment_fields
 from dis_mapping import MappingResult
 from dis_rls import rls_session
-from dis_validation import mapping_produced_columns
+from dis_validation import INVENTORY_CHANGE, MODEL_BY_TYPE, SALES, SNAPSHOT, mapping_produced_columns
 from streaming_consumer.envelope import IngressReadyEvent
 from streaming_consumer.pipeline.mapping import LoadedMapping, catalogue_staleness_columns
 from streaming_consumer.pipeline.normalize import (
@@ -71,11 +71,95 @@ from streaming_consumer.pipeline.normalize import (
     jsonb_param,
 )
 
-# Live table names + event-time columns per routed model (introspected schema).
-_EVENT_TABLES: dict[type[BaseModel], tuple[str, str]] = {
-    StoreSkuSaleEvent: ("canonical.store_sku_sale_events", "source_sale_timestamp"),
-    StoreSkuChangeEvent: ("canonical.store_sku_change_events", "source_event_timestamp"),
+# ---------------------------------------------------------------------------
+# Sink resolution (Atlas A2): one resolver from (vertical, template_type) to a
+# fully-qualified canonical table. The namespace is DECLARED DATA per vertical
+# (retail is the legacy exception keeping the existing `canonical.*`; a new
+# vertical declares its own `canonical_<vertical>`), never computed by suffixing
+# (ADR-ATLAS-001 decision 3; IR spec rev 2 section 7).
+# ---------------------------------------------------------------------------
+
+# Declared per-vertical namespace. New verticals add a declared entry here.
+_NAMESPACE_BY_VERTICAL: dict[str, str] = {"retail": "canonical"}
+
+# The bare canonical table name per template_type (the streaming write concern).
+_TABLE_BY_TEMPLATE_TYPE: dict[str, str] = {
+    SNAPSHOT: "store_sku_current_position",
+    SALES: "store_sku_sale_events",
+    INVENTORY_CHANGE: "store_sku_change_events",
 }
+
+
+def _invert_model_by_type() -> dict[type[BaseModel], str]:
+    """Invert ``MODEL_BY_TYPE`` (template_type -> model) to model -> template_type.
+
+    NOT a silent dict-comprehension: a model appearing under two template_types
+    would drop an entry silently. We assert the inversion is total and injective
+    (length preserved) so a future non-1:1 ``MODEL_BY_TYPE`` fails loud here at
+    import rather than mis-routing a write.
+    """
+    inverse: dict[type[BaseModel], str] = {}
+    for template_type, model in MODEL_BY_TYPE.items():
+        if model in inverse:
+            raise SinkResolutionError(
+                f"MODEL_BY_TYPE is not injective: {model.__name__} maps from both "
+                f"{inverse[model]!r} and {template_type!r}; cannot invert to a sink lookup",
+                template_type=template_type,
+            )
+        inverse[model] = template_type
+    if len(inverse) != len(MODEL_BY_TYPE):
+        raise SinkResolutionError(
+            f"MODEL_BY_TYPE inversion lost entries ({len(MODEL_BY_TYPE)} -> {len(inverse)})"
+        )
+    return inverse
+
+
+_TEMPLATE_TYPE_BY_MODEL: dict[type[BaseModel], str] = _invert_model_by_type()
+
+# The event-time column per routed model (NOT a sink concern; split out of the
+# former _EVENT_TABLES tuple, used by the dedup window's ORDER BY).
+_EVENT_TS_COLUMN: dict[type[BaseModel], str] = {
+    StoreSkuSaleEvent: "source_sale_timestamp",
+    StoreSkuChangeEvent: "source_event_timestamp",
+}
+
+
+def resolve_sink(
+    vertical: str,
+    template_type: str,
+    *,
+    namespaces: dict[str, str] = _NAMESPACE_BY_VERTICAL,
+) -> str:
+    """The fully-qualified canonical table for ``(vertical, template_type)``.
+
+    ``namespaces`` is the declared per-vertical namespace map (defaults to the
+    module dict); the namespace is looked up, never computed by suffixing. Raises
+    ``SinkResolutionError`` (fail-loud, code-quality rule 4) on an undeclared
+    vertical or an unknown template_type.
+    """
+    namespace = namespaces.get(vertical)
+    if namespace is None:
+        raise SinkResolutionError(f"no declared namespace for vertical {vertical!r}", vertical=vertical)
+    basename = _TABLE_BY_TEMPLATE_TYPE.get(template_type)
+    if basename is None:
+        raise SinkResolutionError(
+            f"no canonical table for template_type {template_type!r}", template_type=template_type
+        )
+    return f"{namespace}.{basename}"
+
+
+def vertical_for_tenant(tenant_id: UUID | str) -> str:
+    """The vertical a tenant's canonical data lands in (Atlas A2 STUB).
+
+    The real tenant-to-vertical binding is Customer Master owned (ADR-ATLAS-001
+    decision 6) and arrives in A5; until then every tenant resolves to ``retail``,
+    the deliberate stub (parallel to the pack-signing stub). This function is the
+    single seam the consumer calls at write time, so swapping in the real CM-backed
+    resolution later is a one-place change. It deliberately does NOT read Customer
+    Master.
+    """
+    return "retail"
+
 
 # Columns whose bind values are pre-serialized JSON text (CAST(:p AS JSONB)).
 # attribute_staleness_map joins for the catalogue write (Slice 14d); inert for the
@@ -324,6 +408,8 @@ async def _update_hot_incomplete_path(
     conn: AsyncConnection,
     params: dict[str, Any],
     projected: dict[str, Any],
+    *,
+    hot_table: str,
 ) -> HotMergeOutcome:
     """The INCOMPLETE-mapping path: update-or-miss. NO INSERT exists here.
 
@@ -346,7 +432,7 @@ async def _update_hot_incomplete_path(
     )
     updated = await conn.execute(
         text(
-            "UPDATE canonical.store_sku_current_position "  # noqa: S608 - fixed identifiers
+            f"UPDATE {hot_table} "  # noqa: S608 - resolver-provided identifier
             f"SET {set_list} WHERE {_HOT_KEY_MATCH} "
             "AND (last_source_event_at IS NULL OR :last_source_event_at >= last_source_event_at)"
         ),
@@ -357,7 +443,7 @@ async def _update_hot_incomplete_path(
     exists = (
         await conn.execute(
             text(
-                "SELECT 1 FROM canonical.store_sku_current_position "  # noqa: S608
+                f"SELECT 1 FROM {hot_table} "  # noqa: S608 - resolver-provided identifier
                 f"WHERE {_HOT_KEY_MATCH}"
             ),
             params,
@@ -370,6 +456,8 @@ async def _insert_on_conflict_hot_complete_path(
     conn: AsyncConnection,
     params: dict[str, Any],
     projected: dict[str, Any],
+    *,
+    hot_table: str,
 ) -> HotMergeOutcome:
     """The COMPLETE-mapping path: the proven atomic INSERT … ON CONFLICT.
 
@@ -412,7 +500,7 @@ async def _insert_on_conflict_hot_complete_path(
     set_list = ", ".join(f"{c} = EXCLUDED.{c}" for c in update_columns)
     await conn.execute(
         text(
-            "INSERT INTO canonical.store_sku_current_position "  # noqa: S608 - fixed identifiers
+            f"INSERT INTO {hot_table} "  # noqa: S608 - resolver-provided identifier
             f"({', '.join(insert_columns)}) VALUES ({placeholders}) "
             f"ON CONFLICT {_HOT_CONFLICT_TARGET} "
             f"DO UPDATE SET {set_list} "
@@ -439,9 +527,13 @@ async def _upsert_hot(
     params, projected = _hot_params(
         event, loaded, group, dis_channel=dis_channel, tax_treatment=tax_treatment
     )
+    # Resolve the hot (snapshot) table for this tenant's vertical here, internally,
+    # so this function's signature stays stable for its white-box callers; the hot
+    # table is always the snapshot sink regardless of the event type being written.
+    hot_table = resolve_sink(vertical_for_tenant(event.tenant_id), SNAPSHOT)
     if loaded.hot_complete:
-        return await _insert_on_conflict_hot_complete_path(conn, params, projected)
-    return await _update_hot_incomplete_path(conn, params, projected)
+        return await _insert_on_conflict_hot_complete_path(conn, params, projected, hot_table=hot_table)
+    return await _update_hot_incomplete_path(conn, params, projected, hot_table=hot_table)
 
 
 # ---------------------------------------------------------------------------
@@ -515,6 +607,7 @@ async def write_catalogue_chunk(
     (slice-5b, D95/D98): dis-enrichment wrote them into ``result.contribution`` before
     this sink ran, so they arrive via ``projected`` — there is no fixed-param injection
     on this path anymore."""
+    hot_table = resolve_sink(vertical_for_tenant(event.tenant_id), SNAPSHOT)
     groups = _catalogue_groups(event, result)
     batches = [groups[i : i + batch_size] for i in range(0, len(groups), batch_size)]
     hot_written = 0
@@ -522,7 +615,7 @@ async def write_catalogue_chunk(
         async with rls_session(engine, event.tenant_id) as conn:
             for group in sorted(batch, key=hot_sort_key):
                 params, projected = _hot_params(event, loaded, group, dis_channel=dis_channel)
-                await _insert_on_conflict_hot_complete_path(conn, params, projected)
+                await _insert_on_conflict_hot_complete_path(conn, params, projected, hot_table=hot_table)
                 hot_written += 1
     return WriteReport(
         event_rows_written=0,
@@ -530,7 +623,7 @@ async def write_catalogue_chunk(
         hot_noops=0,
         batches=len(batches),
         duplicates=(),
-        written_to_table="canonical.store_sku_current_position",
+        written_to_table=hot_table,
     )
 
 
@@ -545,7 +638,9 @@ async def write_chunk(
     batch_size: int,
 ) -> WriteReport:
     """Dual-write the chunk in ≤``batch_size`` row-pair batches (the rollback unit)."""
-    table, event_ts_column = _EVENT_TABLES[loaded.target_model]
+    vertical = vertical_for_tenant(event.tenant_id)
+    table = resolve_sink(vertical, _TEMPLATE_TYPE_BY_MODEL[loaded.target_model])
+    event_ts_column = _EVENT_TS_COLUMN[loaded.target_model]
     insert_sql, insert_columns = _event_insert_sql(loaded.target_model, table)
     duplicates: list[DuplicateHit] = []
     hot_written = 0

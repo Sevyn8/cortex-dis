@@ -32,6 +32,7 @@ from dis_core.errors import (
     PayloadTooLargeError,
     PreflightFailedError,
     ResourceNotFoundError,
+    SinkResolutionError,
     StoreStateConflictError,
     SuiteDefinitionError,
     SuiteDriftError,
@@ -310,6 +311,16 @@ def test_event_publish_error_preserves_topic() -> None:
     assert err.topic == "csv.received"
     assert err.tenant_id == "ten"
     assert err.trace_id == "tr"
+
+
+def test_sink_resolution_error_is_a_dis_error_and_carries_context() -> None:
+    err = SinkResolutionError("no declared namespace for vertical 'logistics'", vertical="logistics")
+    assert isinstance(err, DisError)
+    assert err.vertical == "logistics"
+    assert err.template_type is None
+    other = SinkResolutionError("no canonical table for template_type 'x'", template_type="x")
+    assert other.template_type == "x"
+    assert other.vertical is None
 
 
 def test_errors_module_is_leaf_level() -> None:
