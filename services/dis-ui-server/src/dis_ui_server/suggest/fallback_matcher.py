@@ -122,9 +122,7 @@ def match_columns(
         # No catalog at all -> null target; otherwise the argmax key (best_key is
         # set whenever the catalog is non-empty, even when every score is 0.0).
         if best_key is None:
-            suggestions.append(
-                Suggestion(source_column=profile.name, suggested_target=None, confidence=0.0)
-            )
+            suggestions.append(Suggestion(source_column=profile.name, suggested_target=None, confidence=0.0))
         else:
             suggestions.append(
                 Suggestion(
