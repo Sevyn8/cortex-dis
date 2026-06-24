@@ -18,10 +18,14 @@ its own SA for everything else. Unset -> the ambient ADC is used directly.
   ``suggested_target`` and alternative VALIDATED against the catalog key set (the
   model cannot invent a field; invalid targets are nulled / dropped).
 
-The blocking google-genai call runs off the event loop via ``anyio.to_thread``
-with a bounded timeout (the GCS/Pub/Sub pattern). The google-genai import is
-LAZY (inside ``_call_model``) so this module loads without the package; only the
-real LLM path needs it. ``_call_model`` is the single network seam tests override.
+The Vertex transport/auth/timeout scaffold lives in the shared ``vertex_client``
+module (``VertexClient`` plus ``run_blocking``), so this path and the future Atlas
+inference path share ONE generative boundary. This module keeps the
+suggestion-specific logic (``_build_prompt``, ``_parse_and_validate``, the
+closed-catalog guardrail) and delegates the network call: ``_call_model`` calls
+``VertexClient.generate_json`` and ``suggest`` awaits ``run_blocking(self._call_model,
+...)``. ``_call_model`` remains the single network seam tests override, on this
+instance, unchanged.
 """
 
 from __future__ import annotations
@@ -29,20 +33,17 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import anyio
-
 from dis_core.logging import get_logger
 from dis_ui_server.config import SERVICE_NAME
 from dis_ui_server.schemas.mapping_fields import TemplateMappingField
 from dis_ui_server.schemas.mapping_suggestions import ColumnProfile, Suggestion, SuggestionSource
 from dis_ui_server.suggest.fallback_matcher import match_columns
+from dis_ui_server.suggest.vertex_client import VertexClient, run_blocking
 
 _log = get_logger(SERVICE_NAME)
 
 _DEFAULT_MODEL = "gemini-2.5-flash"
 _DEFAULT_TIMEOUT_S = 15.0
-# The scope Vertex calls need; also the impersonation target scope.
-_CLOUD_PLATFORM_SCOPE = "https://www.googleapis.com/auth/cloud-platform"
 
 
 class GeminiSuggester:
@@ -61,12 +62,12 @@ class GeminiSuggester:
         # backend; credentials come from Application Default Credentials (the Cloud Run service
         # account), not from a configured secret. Both unset -> mechanical fallback.
         # impersonate_sa (optional): impersonate this SA for the Vertex calls only; unset ->
-        # ambient ADC used directly.
+        # ambient ADC used directly. The transport is the shared VertexClient.
         self._project = project
         self._location = location
-        self._impersonate_sa = impersonate_sa
         self._model = model
         self._timeout_s = timeout_s
+        self._vertex = VertexClient(project, location, model=model, impersonate_sa=impersonate_sa)
 
     async def suggest(
         self,
@@ -78,8 +79,7 @@ class GeminiSuggester:
             return ("fallback", None, match_columns(columns, catalog))
         try:
             prompt = self._build_prompt(columns, catalog)
-            with anyio.fail_after(self._timeout_s):
-                text = await anyio.to_thread.run_sync(self._call_model, prompt)
+            text = await run_blocking(self._call_model, prompt, timeout_s=self._timeout_s)
             suggestions = self._parse_and_validate(text, columns, catalog)
             return ("llm", self._model, suggestions)
         except Exception as exc:  # timeout, transport, parse, anything: degrade
@@ -91,41 +91,13 @@ class GeminiSuggester:
     # -- the single network seam (lazy import; tests override this) -----------------
 
     def _call_model(self, prompt: str) -> str:
-        """Blocking Gemini call returning the raw JSON text. Lazy-imports the SDK.
+        """Blocking Gemini call returning the raw JSON text.
 
-        Vertex AI mode: ``vertexai=True`` selects the Vertex backend with the given project +
-        location. With ``impersonate_sa`` set, the credentials are short-lived impersonated
-        credentials for that SA (minted from the ambient ADC via google.auth); otherwise the
-        ambient ADC (the Cloud Run service account) is used directly. No API key. The
-        generate_content + structured-output (response_mime_type) call is identical either way,
-        so the prompt/parse/validation logic is unchanged.
+        Delegates to the shared ``VertexClient`` transport (Vertex AI, ADC, optional
+        SA impersonation, lazy SDK import, structured-JSON output). Kept as a method
+        on this instance so it remains the single network seam tests override.
         """
-        import google.genai as genai
-        from google.genai import types
-
-        if self._impersonate_sa:
-            import google.auth
-            from google.auth import impersonated_credentials
-
-            source_credentials, _ = google.auth.default(scopes=[_CLOUD_PLATFORM_SCOPE])
-            # google.auth's impersonated_credentials.Credentials is not type-annotated, so the
-            # strict-typed call is flagged; the args are exactly the documented Vertex pattern.
-            credentials = impersonated_credentials.Credentials(  # type: ignore[no-untyped-call]
-                source_credentials=source_credentials,
-                target_principal=self._impersonate_sa,
-                target_scopes=[_CLOUD_PLATFORM_SCOPE],
-            )
-            client = genai.Client(
-                vertexai=True, project=self._project, location=self._location, credentials=credentials
-            )
-        else:
-            client = genai.Client(vertexai=True, project=self._project, location=self._location)
-        response = client.models.generate_content(
-            model=self._model,
-            contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
-        )
-        return response.text or ""
+        return self._vertex.generate_json(prompt)
 
     # -- pure helpers (directly testable) ------------------------------------------
 
