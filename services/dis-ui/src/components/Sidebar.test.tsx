@@ -18,6 +18,12 @@ const opsSnapshot: AuthSnapshot = {
   storeId: null,
   roles: ['dis:ops', 'dis:read'],
 }
+const superAdminSnapshot: AuthSnapshot = {
+  userId: 'u_superadmin01',
+  tenantId: null,
+  storeId: null,
+  roles: ['atlas:schema:publish', 'dis:read'],
+}
 
 // Inject an ops-flagged item so the gate is exercised without depending on a real ops nav item
 // (none remain in NAV_ITEMS after Ops Fleet was removed). T7: items carry a section.
@@ -27,6 +33,19 @@ const ITEMS: NavItem[] = [
 ]
 
 describe('Sidebar nav gating', () => {
+  it('shows the Atlas item only for a super-admin snapshot (A4), not tenant or ops', () => {
+    // superAdmin-flagged item: gated on isSuperAdmin, independent of the ops flag.
+    const tenantView = renderWithProviders(<Sidebar />, { snapshot: tenantSnapshot })
+    expect(screen.queryByRole('link', { name: 'Atlas' })).not.toBeInTheDocument()
+    tenantView.unmount()
+    const opsView = renderWithProviders(<Sidebar />, { snapshot: opsSnapshot })
+    expect(screen.queryByRole('link', { name: 'Atlas' })).not.toBeInTheDocument()
+    opsView.unmount()
+    renderWithProviders(<Sidebar />, { snapshot: superAdminSnapshot })
+    const atlas = screen.getByRole('link', { name: 'Atlas' })
+    expect(atlas).toHaveAttribute('href', '/atlas')
+  })
+
   it('always renders tenant items', () => {
     renderWithProviders(<Sidebar items={ITEMS} />, { snapshot: tenantSnapshot })
     expect(screen.getByRole('link', { name: 'Sources' })).toBeInTheDocument()

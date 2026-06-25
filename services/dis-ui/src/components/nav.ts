@@ -1,4 +1,12 @@
-import { Bell, Database, FileSearch, LayoutDashboard, Plug, ShieldAlert } from 'lucide-react'
+import {
+  Bell,
+  Database,
+  FileSearch,
+  Layers,
+  LayoutDashboard,
+  Plug,
+  ShieldAlert,
+} from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
 // T7: nav items are grouped into labeled sections (Ithina-console look). The section is a
@@ -22,6 +30,10 @@ export type NavItem = {
   // (the Sidebar drops a section with no visible items). No ops-only items remain today, but
   // the flag is kept for future ops surfaces.
   ops?: boolean
+  // Super-Admin-only item (A4 Atlas console): rendered only when isSuperAdmin(snapshot) is
+  // true, mirroring `ops`. Gates the Atlas entry; the route is also wrapped in AtlasBoundary
+  // and the BFF enforces the real gate, so this is purely the nav-visibility convenience.
+  superAdmin?: boolean
 }
 
 // Tenant navigation. Dashboard is the index (`/`), the single landing for every persona;
@@ -35,6 +47,9 @@ export const NAV_ITEMS: NavItem[] = [
   // CSV/SFTP branch); the old "Add Source" picker (/connect) and /upload wizard were retired.
   { label: 'Upload Data', to: '/ingest', icon: Database, section: 'DATA' },
   { label: 'Connect a System', to: '/connectors/new', icon: Plug, section: 'DATA' },
+  // Atlas console (A4): Super-Admin-only canonical-schema authoring. Gated by `superAdmin`
+  // so a tenant/ops snapshot never sees it; the /atlas subtree is also AtlasBoundary-wrapped.
+  { label: 'Atlas', to: '/atlas', icon: Layers, section: 'DATA', superAdmin: true },
   // MONITORING: Quarantine and Audit are scope-aware (T9): a tenant sees their own tenant
   // (scope locked, no tenant filter); an ops user sees the fleet-wide view with a tenant
   // filter, via the SAME route/screen (the component branches on isOps). Always visible.

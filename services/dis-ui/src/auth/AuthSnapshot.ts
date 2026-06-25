@@ -20,3 +20,12 @@ export type AuthSnapshot = {
 export function isOps(snapshot: AuthSnapshot): boolean {
   return snapshot.roles.includes('dis:ops')
 }
+
+// The Atlas console gate (A4). The Atlas console (schema authoring/ratify/publish) is
+// platform-scoped and Super-Admin-only; this mirrors isOps. The role string matches the
+// dis-ui-server require_super_admin gate (auth/scope.py SUPER_ADMIN_ROLE). The REAL role
+// is Customer Master issued at global scope and lands in A5 (Sanjeev's swimlane); this is
+// the same role string the BFF stub checks, so the UI gate and the server gate agree.
+export function isSuperAdmin(snapshot: AuthSnapshot): boolean {
+  return snapshot.roles.includes('atlas:schema:publish')
+}

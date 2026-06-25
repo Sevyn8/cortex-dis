@@ -2,7 +2,7 @@ import { PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useState } from 'react'
 import { NavLink } from 'react-router'
 
-import { isOps } from '../auth/AuthSnapshot'
+import { isOps, isSuperAdmin } from '../auth/AuthSnapshot'
 import { useAuth } from '../auth/useAuth'
 import { cn } from '@/lib/utils'
 import { BrandMark } from './BrandMark'
@@ -21,7 +21,18 @@ import type { NavItem } from './nav'
 export function Sidebar({ items = NAV_ITEMS }: { items?: NavItem[] }) {
   const { snapshot } = useAuth()
   const ops = snapshot !== null && isOps(snapshot)
-  const visible = items.filter((item) => (item.ops === true ? ops : true))
+  const superAdmin = snapshot !== null && isSuperAdmin(snapshot)
+  // A role-flagged item is shown only for the matching role; an unflagged item is always
+  // shown. superAdmin and ops are independent flags (the Atlas entry is superAdmin-only).
+  const visible = items.filter((item) => {
+    if (item.superAdmin === true) {
+      return superAdmin
+    }
+    if (item.ops === true) {
+      return ops
+    }
+    return true
+  })
   const [collapsed, setCollapsed] = useState(false)
 
   // Group visible items by section, in NAV_SECTION_ORDER; drop empty sections so a section
@@ -79,7 +90,11 @@ export function Sidebar({ items = NAV_ITEMS }: { items?: NavItem[] }) {
                       }
                     >
                       {Icon ? (
-                        <Icon aria-hidden="true" strokeWidth={1.5} className="size-[18px] shrink-0" />
+                        <Icon
+                          aria-hidden="true"
+                          strokeWidth={1.5}
+                          className="size-[18px] shrink-0"
+                        />
                       ) : null}
                       <span className={cn(collapsed && 'sr-only')}>{item.label}</span>
                     </NavLink>
