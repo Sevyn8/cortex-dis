@@ -19,8 +19,22 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from dis_codegen.draft_ir import assemble_draft_ir, emit_draft_ir, validate_fresh_draft
-from dis_codegen.ir import FieldIR, ProducedBy, SchemaIR, load_ir
+from dis_codegen.draft_ir import (
+    assemble_draft_ir,
+    emit_draft_ir,
+    schema_to_document,
+    validate_fresh_draft,
+)
+from dis_codegen.ir import (
+    FieldIR,
+    FieldProvenance,
+    ProducedBy,
+    SchemaIR,
+    TableIR,
+    TypeIR,
+    load_ir,
+    parse_ir,
+)
 
 # Profiler import is a TEST-only cross-package reference (no production dependency).
 # dis-ui-server ships no py.typed marker, so the strict import is untyped here.
@@ -84,9 +98,95 @@ def test_assembled_draft_validates_and_round_trips_through_the_a1_loader(tmp_pat
     validate_fresh_draft(draft)  # must not raise
     out = tmp_path / "retail.draft.ir.yaml"
     out.write_text(emit_draft_ir(draft))
-    reloaded = load_ir(out)  # the A1 loader reads the draft (provenance round-trips)
+    reloaded = load_ir(out)  # the A1 loader reads the draft
+    # Full equality (strengthened): the emit -> load round-trip must lose NOTHING, not
+    # just preserve status/natural_key. This is what catches a dropped field.
+    assert reloaded == draft
     assert reloaded.status == "draft"
     assert reloaded.tables[0].natural_key == ()  # curated: undecided
+
+
+def _all_fields_schema() -> SchemaIR:
+    """A SchemaIR exercising EVERY section-3 field, so the round-trip guard is real."""
+    provenance = FieldProvenance(
+        introduced_in=2,
+        source_headers=("Item Code", "SKU"),
+        present_in_files=2,
+        total_files=3,
+        rows_profiled=42,
+    )
+    money = FieldIR(
+        name="current_retail_price",
+        produced_by=ProducedBy.MAPPING_PRODUCED,
+        type_ref="decimal",
+        nullable=False,
+        default=None,
+        mandatory=True,
+        inline_type=TypeIR(base="decimal", precision=12, scale=4),
+        origin="human",
+        display_name="Retail price",
+        description="Current listed shelf price.",
+        section="pricing",
+        provenance=provenance,
+    )
+    enum_field = FieldIR(
+        name="tax_treatment",
+        produced_by=ProducedBy.MAPPING_PRODUCED,
+        type_ref="enum",
+        nullable=False,
+        mandatory=True,
+        enum_ref="tax_treatment",
+        origin="human",
+        display_name="Tax treatment",
+        description="Inclusive or exclusive.",
+        section="pricing",
+        pii="none",
+        provenance=provenance,
+    )
+    candidate_field = FieldIR(
+        name="expiry_source",
+        produced_by=ProducedBy.MAPPING_PRODUCED,
+        type_ref="str",
+        nullable=True,
+        mandatory=False,
+        max_length=64,
+        origin="inferred",
+        display_name="Expiry source",
+        description="Where the expiry came from.",
+        section="expiry",
+        pii="tokenize",
+        enum_candidate=("PRINTED", "SCANNED"),
+        provenance=provenance,
+    )
+    table = TableIR(
+        key="store_sku_current_position",
+        template_type="snapshot",
+        semantics="merge_upsert",
+        sink="canonical.store_sku_current_position",
+        natural_key=("sku_id",),
+        fields=(money, enum_field, candidate_field),
+    )
+    return SchemaIR(
+        vertical="retail",
+        schema_version=3,
+        status="published",
+        system_profile="dis.v1",
+        types={
+            "money": TypeIR(base="decimal", precision=12, scale=4),
+            "code3": TypeIR(base="str", min_length=3, max_length=3),
+        },
+        enums={"tax_treatment": ("INCLUSIVE", "EXCLUSIVE")},
+        tables=(table,),
+    )
+
+
+def test_schema_to_document_round_trips_every_section_3_field() -> None:
+    # The lossless guard: serialize -> reload must equal the original field-for-field,
+    # exercising display_name, description, section, enum_ref, pii, enum_candidate,
+    # provenance, inline decimal types, the top-level types + enums blocks, default,
+    # mandatory, max_length, nullable, origin, produced_by. Catches the NEXT dropped field.
+    original = _all_fields_schema()
+    assert parse_ir(schema_to_document(original)) == original
 
 
 def test_layer_b_assembly_stamps_inferred_and_flags_curated() -> None:

@@ -52,7 +52,7 @@ Restated from root `CLAUDE.md` — the stack this contract is implemented on:
 - **Logging:** dis-core structlog-style binding; every log line carries `tenant_id`, `trace_id` (where applicable), `service="dis-ui-server"`, `stage`.
 - **Tracing:** OpenTelemetry; `trace_id` minted only in `POST /v1/csv-uploads` (Slice 8, the synchronous form) and `POST /v1/quarantine/{trace_id}/resubmit` (both ingress-starting actions — see §8 and §4.3); never anywhere else.
 
-This service **never writes canonical tables** (D26). Its writes: `config.source_mappings` rows/status, the three Pub/Sub topics above, and GCS onboarding-staging objects. Every endpoint below states its side effects; none implies a canonical write.
+This service **never writes canonical tables** (D26). Its writes: `config.source_mappings` rows/status, `atlas.schema_drafts` (the Atlas console draft/published IR store, platform-scoped and non-RLS, written via `rls_platform_session`; D104), the three Pub/Sub topics above, and GCS onboarding-staging objects. Every endpoint below states its side effects; none implies a canonical write.
 
 ---
 

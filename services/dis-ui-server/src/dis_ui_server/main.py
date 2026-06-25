@@ -28,7 +28,7 @@ from dis_audit import AuditBackend, select_writer
 from dis_core.logging import configure_logging, get_logger
 from dis_storage import StorageClient
 from dis_ui_server.api import api_router
-from dis_ui_server.atlas import InMemoryDraftStore
+from dis_ui_server.atlas import PostgresDraftStore
 from dis_ui_server.audit import UiAudit
 from dis_ui_server.catalog import build_field_catalogs
 from dis_ui_server.config import (
@@ -84,8 +84,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         impersonate_sa=config.gemini_impersonate_sa,
     )
     # Atlas console (A4): the field proposer reuses the same Vertex boundary as the
-    # mapping suggester (construction-lazy, degrade-never-raise), and an in-memory
-    # draft store (the real platform-scoped table is PR2). Tests override both.
+    # mapping suggester (construction-lazy, degrade-never-raise). Tests override both
+    # app.state.atlas_proposer and app.state.atlas_store with their no-DB doubles.
     app.state.atlas_proposer = FieldProposer(
         VertexClient(
             config.gemini_vertex_project,
@@ -94,7 +94,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             impersonate_sa=config.gemini_impersonate_sa,
         )
     )
-    app.state.atlas_store = InMemoryDraftStore()
+    # Production: durable Postgres store over atlas.schema_drafts (PR2, D104). Tests
+    # override app.state.atlas_store with InMemoryDraftStore (the no-DB double).
+    app.state.atlas_store = PostgresDraftStore(engine)
     _log.bind(stage="startup").info("dis-ui-server started")
     try:
         yield
