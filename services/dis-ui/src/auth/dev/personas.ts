@@ -34,4 +34,16 @@ export const PERSONAS: StubPersona[] = [
     store_id: null,
     roles: ['dis:ops', 'dis:read', 'dis:mapping_admin'],
   },
+  {
+    // DEV-ONLY construct for the Atlas console (A4). The Super Admin role is platform
+    // (cross-tenant) and Customer Master issued in A5; this dev persona carries the same
+    // role string the dis-ui-server gate checks (atlas:schema:publish). tenant_id/store_id
+    // are null (cross-tenant), like ops.
+    id: 'super_admin',
+    label: 'Super Admin (dev only)',
+    sub: 'u_superadmin01',
+    tenant_id: null,
+    store_id: null,
+    roles: ['atlas:schema:publish', 'dis:read'],
+  },
 ]

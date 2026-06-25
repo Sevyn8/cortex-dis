@@ -25,4 +25,11 @@ export const ME_FIXTURES: Record<string, MeResponse> = {
     tenant_id: null,
     tenant_name: null,
   },
+  u_superadmin01: {
+    user_id: 'u_superadmin01',
+    email: 'super.admin@ithina.test',
+    name: 'Super Admin',
+    tenant_id: null,
+    tenant_name: null,
+  },
 }

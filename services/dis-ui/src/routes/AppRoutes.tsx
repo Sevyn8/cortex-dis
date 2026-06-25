@@ -1,8 +1,14 @@
 import { Navigate, Route, Routes } from 'react-router'
 
+import { AtlasBoundary } from '../auth/AtlasBoundary'
 import { AuthBoundary } from '../auth/AuthBoundary'
 import { OpsBoundary } from '../auth/OpsBoundary'
 import { AppLayout } from './AppLayout'
+import { AtlasRegistry } from './atlas/AtlasRegistry'
+import { PublishedDetail } from './atlas/PublishedDetail'
+import { PublishReceipt } from './atlas/PublishReceipt'
+import { RatifyConsole } from './atlas/RatifyConsole'
+import { UploadDraft } from './atlas/UploadDraft'
 import { AuditLookup } from './AuditLookup'
 import { ConnectorSetup } from './ConnectorSetup'
 import { DevLogin } from './DevLogin'
@@ -60,6 +66,18 @@ export function AppRoutes() {
           <Route path="/quarantine" element={<QuarantineConsole />} />
           <Route path="/audit" element={<AuditLookup />} />
           <Route path="/notifications" element={<Notifications />} />
+          {/* Atlas console (A4 PR3b): Super-Admin-only canonical-schema authoring. AtlasBoundary
+              gates the whole subtree (non-super-admin -> PermissionDenied); the BFF enforces the
+              real gate. Registry (index) -> upload -> ratify (drafts/:id) -> publish receipt;
+              published/:id is the read-only published-schema detail. Evolve/diff is A6 (deferred,
+              no route). */}
+          <Route path="/atlas" element={<AtlasBoundary />}>
+            <Route index element={<AtlasRegistry />} />
+            <Route path="upload" element={<UploadDraft />} />
+            <Route path="drafts/:draftId" element={<RatifyConsole />} />
+            <Route path="drafts/:draftId/receipt" element={<PublishReceipt />} />
+            <Route path="published/:draftId" element={<PublishedDetail />} />
+          </Route>
           {/* Ops subtree: OpsBoundary gates ALL /ops/* (non-ops -> PermissionDenied). The Ops
               Fleet screen was removed; the legacy quarantine/audit redirects remain. */}
           <Route path="/ops" element={<OpsBoundary />}>
