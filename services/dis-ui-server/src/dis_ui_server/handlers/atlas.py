@@ -215,6 +215,9 @@ def _emit_publish_audit(request: Request, draft_id: str, frozen: SchemaIR) -> bo
     audit = getattr(request.app.state, "audit", None)
     emit = getattr(audit, "emit_atlas_publish", None)
     if emit is None:
+        _log.bind(stage="atlas_publish").debug(
+            "publish audit sink not wired; skipping (CM action-ledger binding lands in A5)"
+        )
         return False
     try:
         emit(draft_id=draft_id, vertical=frozen.vertical, schema_version=frozen.schema_version)
