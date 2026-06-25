@@ -21,11 +21,20 @@ from uuid import UUID
 
 from fastapi import Depends, Request
 
-from dis_core.errors import AuthTokenError, OpsRoleRequiredError, TenantScopeError
+from dis_core.errors import (
+    AuthTokenError,
+    OpsRoleRequiredError,
+    SuperAdminRequiredError,
+    TenantScopeError,
+)
 from dis_ui_server.auth.identity import Identity, UserType
 from dis_ui_server.auth.verifier import verify_token
 
 OPS_ROLE = "dis:ops"
+# The Atlas console Super Admin role. The REAL role is Customer Master issued at
+# global scope (ADR-ATLAS-001 decision 6) and lands in A5 (Sanjeev's swimlane);
+# A4 PR1 stubs the gate by checking this role string on the verified token.
+SUPER_ADMIN_ROLE = "atlas:schema:publish"
 
 _BEARER_PREFIX = "Bearer "
 
@@ -62,6 +71,20 @@ async def require_ops(
     """Guarantee the ``dis:ops`` role (PLATFORM user), else 403."""
     if OPS_ROLE not in identity.roles:
         raise OpsRoleRequiredError(f"{OPS_ROLE} role required for an ops endpoint")
+    return identity
+
+
+async def require_super_admin(
+    identity: Annotated[Identity, Depends(get_current_identity)],
+) -> Identity:
+    """Guarantee the Atlas Super Admin role, else 403 (mirrors ``require_ops``).
+
+    The Atlas console is platform-scoped and Super-Admin-only (ADR-ATLAS-001
+    decision 6). A4 PR1 gates on the ``SUPER_ADMIN_ROLE`` string (the stub); the
+    real Customer-Master-issued global role lands in A5 (Sanjeev's swimlane).
+    """
+    if SUPER_ADMIN_ROLE not in identity.roles:
+        raise SuperAdminRequiredError(f"{SUPER_ADMIN_ROLE} role required for the Atlas console")
     return identity
 
 

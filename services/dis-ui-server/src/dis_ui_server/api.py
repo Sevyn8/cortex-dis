@@ -19,6 +19,7 @@ from fastapi import APIRouter
 
 from dis_ui_server.config import API_PREFIX
 from dis_ui_server.handlers import (
+    atlas,
     csv_uploads,
     dashboard,
     mapping_suggestions,
@@ -36,3 +37,4 @@ api_router.include_router(csv_uploads.router)
 api_router.include_router(mapping_suggestions.router)
 api_router.include_router(quarantine.router)
 api_router.include_router(dashboard.router)
+api_router.include_router(atlas.router)

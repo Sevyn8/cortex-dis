@@ -15,6 +15,8 @@ from dis_core.errors import (
     CsvIngestError,
     CustomerMasterReadError,
     DisError,
+    DraftNotRatifiedError,
+    DraftStateConflictError,
     EventContractError,
     EventPathMismatchError,
     EventPublishError,
@@ -36,6 +38,7 @@ from dis_core.errors import (
     StoreStateConflictError,
     SuiteDefinitionError,
     SuiteDriftError,
+    SuperAdminRequiredError,
     TenantScopeError,
     UploadRequestError,
     UploadStructureError,
@@ -332,3 +335,25 @@ def test_errors_module_is_leaf_level() -> None:
     )
     result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_atlas_console_errors_root_at_dis_error_and_carry_context() -> None:
+    # A4: the Atlas console error family, mapped to 403/422/409 by the service handlers.
+    assert issubclass(SuperAdminRequiredError, DisError)
+    assert issubclass(DraftNotRatifiedError, DisError)
+    assert issubclass(DraftStateConflictError, DisError)
+
+    assert SuperAdminRequiredError("atlas:schema:publish required").message.startswith("atlas")
+
+    not_ratified = DraftNotRatifiedError(
+        "unratified curated attributes",
+        violations=("retail.sku_id: curated attribute still origin: inferred (needs ratification)",),
+    )
+    assert not_ratified.violations == (
+        "retail.sku_id: curated attribute still origin: inferred (needs ratification)",
+    )
+
+    conflict = DraftStateConflictError(
+        "published versions are immutable", draft_id="d-1", expected="draft", actual="published"
+    )
+    assert (conflict.draft_id, conflict.expected, conflict.actual) == ("d-1", "draft", "published")

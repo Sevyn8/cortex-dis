@@ -19,8 +19,11 @@ from __future__ import annotations
 from dis_codegen.draft_ir import (
     SNAPSHOT_SYSTEM_PROFILE,
     assemble_draft_ir,
+    assert_ratified_for_publish,
     emit_draft_ir,
-    validate_draft_ir,
+    is_curated_bearing,
+    ratify_violations,
+    validate_fresh_draft,
 )
 from dis_codegen.generate import DdlSubset, render_ddl, render_model, render_provenance
 from dis_codegen.ir import FieldIR, FieldProvenance, ProducedBy, SchemaIR, TableIR, TypeIR, load_ir
@@ -36,11 +39,14 @@ __all__ = [
     "TableIR",
     "TypeIR",
     "assemble_draft_ir",
+    "assert_ratified_for_publish",
     "emit_draft_ir",
+    "is_curated_bearing",
     "load_ir",
+    "ratify_violations",
     "render_ddl",
     "render_model",
     "render_provenance",
     "type_signature",
-    "validate_draft_ir",
+    "validate_fresh_draft",
 ]

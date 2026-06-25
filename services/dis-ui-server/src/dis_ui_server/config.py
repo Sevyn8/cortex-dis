@@ -77,6 +77,13 @@ CSV_UPLOAD_MAX_FILE_BYTES = 10 * 1024 * 1024
 # past this is rejected mid-stream regardless of how the parts are arranged.
 CSV_UPLOAD_BODY_CEILING_BYTES = CSV_UPLOAD_MAX_FILE_BYTES + 64 * 1024
 
+# Atlas console (A4): the multi-file example-export upload. The single-file
+# streaming reader (upload_stream.read_csv_upload) is single-part by design and
+# not reusable for a set, so the Atlas upload uses FastAPI UploadFile with an
+# explicit count cap here and the per-file byte ceiling reused from
+# CSV_UPLOAD_MAX_FILE_BYTES above. A vertical's example exports are few.
+ATLAS_MAX_UPLOAD_FILES = 10
+
 # The browser-served dis-ui SPA's dev origin (Slice 14c, confirmed live: dis-ui
 # runs Vite with NO server.port override and its README pins
 # "pnpm dev - dev server on http://localhost:5173"). NEVER a wildcard: a

@@ -649,6 +649,66 @@ class OpsRoleRequiredError(DisError):
         self.message = message
 
 
+# -- Atlas console errors (A4) --------------------------------------------------
+# Raised by the dis-ui-server Atlas console handlers (the override editor + publish).
+# Mapped by the service's exception handlers to the §2.3 envelope. The Super Admin
+# role is CM-issued in A5 (Sanjeev); A4 stubs the gate on the role string.
+
+
+class SuperAdminRequiredError(DisError):
+    """An Atlas console endpoint was called without the Super Admin role. Maps to 403.
+
+    The Atlas console (schema authoring/ratify/publish) is platform-scoped and
+    Super-Admin-only (ADR-ATLAS-001 decision 6). The real ``atlas:schema:publish``
+    global role is Customer Master issued (A5, Sanjeev's swimlane); A4 gates on the
+    role string.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class DraftNotRatifiedError(DisError):
+    """Publish was attempted while the draft IR still has unratified curated attributes.
+
+    The publish ratify gate (IR spec section 5): a version is rejected while any
+    curated-bearing field is still ``origin: inferred`` (or a ``merge_upsert`` table
+    has no ratified natural key). Maps to HTTP 422 (BUSINESS_RULE). ``violations``
+    carries the per-field reasons so the console can show exactly what remains
+    unratified; the draft is left unpublished.
+    """
+
+    def __init__(self, message: str, *, violations: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.message = message
+        self.violations = violations
+
+
+class DraftStateConflictError(DisError):
+    """An edit or transition was attempted against a draft in the wrong lifecycle state.
+
+    Maps to HTTP 409. Raised when editing a field that is read-only (the system
+    profile is locked, IR spec section 4) or when mutating a draft that is already
+    ``published`` (published versions are immutable). ``expected`` / ``actual`` name
+    the state mismatch where one applies.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        draft_id: str | None = None,
+        expected: str | None = None,
+        actual: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.draft_id = draft_id
+        self.expected = expected
+        self.actual = actual
+
+
 # -- dis-ui-server data-endpoint errors (Slice 14b) -----------------------------
 # Raised by the dis-ui-server mapping-template handlers/repos (API_CONTRACT.md
 # §2.3) and mapped by its FastAPI exception handlers to the §2.3 envelope. Each
