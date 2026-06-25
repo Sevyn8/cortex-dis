@@ -28,6 +28,7 @@ from dis_audit import AuditBackend, select_writer
 from dis_core.logging import configure_logging, get_logger
 from dis_storage import StorageClient
 from dis_ui_server.api import api_router
+from dis_ui_server.atlas import InMemoryDraftStore
 from dis_ui_server.audit import UiAudit
 from dis_ui_server.catalog import build_field_catalogs
 from dis_ui_server.config import (
@@ -39,10 +40,15 @@ from dis_ui_server.config import (
 from dis_ui_server.db import create_engine_from_config
 from dis_ui_server.errors_http import register_error_handlers
 from dis_ui_server.handlers import health
+from dis_ui_server.infer.proposer import FieldProposer
 from dis_ui_server.publisher import PubsubPublisher
 from dis_ui_server.suggest.gemini_client import GeminiSuggester
+from dis_ui_server.suggest.vertex_client import VertexClient
 
 _log = get_logger(SERVICE_NAME)
+
+# The Atlas field proposer's Gemini model (same default as the mapping suggester).
+_ATLAS_PROPOSER_MODEL = "gemini-2.5-flash"
 
 
 @asynccontextmanager
@@ -77,6 +83,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         location=config.gemini_vertex_location,
         impersonate_sa=config.gemini_impersonate_sa,
     )
+    # Atlas console (A4): the field proposer reuses the same Vertex boundary as the
+    # mapping suggester (construction-lazy, degrade-never-raise), and an in-memory
+    # draft store (the real platform-scoped table is PR2). Tests override both.
+    app.state.atlas_proposer = FieldProposer(
+        VertexClient(
+            config.gemini_vertex_project,
+            config.gemini_vertex_location,
+            model=_ATLAS_PROPOSER_MODEL,
+            impersonate_sa=config.gemini_impersonate_sa,
+        )
+    )
+    app.state.atlas_store = InMemoryDraftStore()
     _log.bind(stage="startup").info("dis-ui-server started")
     try:
         yield

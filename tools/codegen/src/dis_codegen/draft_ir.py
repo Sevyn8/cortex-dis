@@ -135,13 +135,18 @@ def assemble_draft_ir(
     )
 
 
-def validate_draft_ir(schema: SchemaIR) -> None:
-    """Assert the draft's origin/produced_by invariants (fail loud, code-quality rule 4).
+def validate_fresh_draft(schema: SchemaIR) -> None:
+    """The ASSEMBLY-TIME invariant: a freshly assembled draft (fail loud, rule 4).
 
     Every field origin is inferred or human; every mapping_produced (business) field is
     origin inferred (so its curated attributes are flagged, never decided); every
     non-mapping_produced (injected system) field is origin human (locked). Raises
     ``ValueError`` (the tools/codegen convention) on any violation.
+
+    This is the LOGICAL INVERSE of the publish gate (``ratify_violations`` /
+    ``assert_ratified_for_publish``): once a human ratifies a curated field its origin
+    flips to ``human``, which this check rejects. So it is for assembly-time use ONLY
+    and must never be run at publish.
     """
     for table in schema.tables:
         for f in table.fields:
@@ -158,6 +163,58 @@ def validate_draft_ir(schema: SchemaIR) -> None:
                     f"{table.key}.{f.name}: injected system field must be origin human (locked), "
                     f"got {f.origin!r}"
                 )
+
+
+def is_curated_bearing(field: FieldIR, table: TableIR) -> bool:
+    """Whether a field carries a curated attribute that requires human ratification.
+
+    DERIVED from the field's CURRENT content at call time (never a cached flag), so a
+    field newly marked mandatory or given an enum candidate via an edit is re-evaluated
+    at publish: curated-bearing iff it is a ``natural_key`` member, OR ``mandatory``, OR
+    it carries an ``enum_candidate`` vocabulary, OR it has a non-trivial ``pii`` class
+    (IR spec section 5). A4 PR1 ratifies at FIELD granularity; section-5's per-attribute
+    origin is deferred (it would need per-attribute origin in the IR model).
+    """
+    return (
+        field.name in table.natural_key
+        or field.mandatory
+        or bool(field.enum_candidate)
+        or (field.pii is not None and field.pii != "none")
+    )
+
+
+def ratify_violations(schema: SchemaIR) -> list[str]:
+    """The SINGLE source of truth for whether a draft is publishable.
+
+    Returns the reasons it is not ratified (empty == publishable): any curated-bearing
+    field still ``origin: inferred``, and any ``merge_upsert`` table whose ``natural_key``
+    is empty (unset == not human-ratified). The members of a non-empty natural_key are
+    themselves curated-bearing, so a natural key that "looks set" but whose member fields
+    are still inferred is rejected by the per-field check. (IR spec section 5 publish gate.)
+    """
+    violations: list[str] = []
+    for table in schema.tables:
+        for f in table.fields:
+            if is_curated_bearing(f, table) and f.origin != "human":
+                violations.append(
+                    f"{table.key}.{f.name}: curated attribute still origin: inferred (needs ratification)"
+                )
+        if table.semantics == "merge_upsert" and not table.natural_key:
+            violations.append(f"{table.key}: merge_upsert table has no ratified natural_key")
+    return violations
+
+
+def assert_ratified_for_publish(schema: SchemaIR) -> None:
+    """Raise ``ValueError`` if the draft is not ratified for publish.
+
+    Wraps :func:`ratify_violations` (the single check) so a raising caller (the draft
+    store's freeze backstop) and a list-returning caller (the publish handler, for a
+    clean 4xx with the reasons) share ONE implementation. Distinct from
+    :func:`validate_fresh_draft` (the assembly invariant); never run that at publish.
+    """
+    violations = ratify_violations(schema)
+    if violations:
+        raise ValueError("draft is not ratified for publish: " + "; ".join(violations))
 
 
 def _field_to_dict(f: FieldIR) -> dict[str, Any]:

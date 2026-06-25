@@ -61,6 +61,11 @@ dependencies = [
   # impersonated_credentials). Imported DIRECTLY now (not just transitively off
   # google-genai), so declared explicitly.
   "google-auth>=2.53",
+  # Atlas console (A4): the PURE IR ops only — SchemaIR + assemble_draft_ir,
+  # validate_fresh_draft, ratify_violations / assert_ratified_for_publish,
+  # emit_draft_ir. The BFF MUST NOT import the generator (render_*); code
+  # generation stays out-of-band per the freeze-not-generate publish model.
+  "dis-codegen",
 ]
 
 [build-system]

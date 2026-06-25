@@ -32,6 +32,8 @@ from fastapi.responses import JSONResponse
 from dis_core.errors import (
     AuthTokenError,
     DisError,
+    DraftNotRatifiedError,
+    DraftStateConflictError,
     EventPublishError,
     InvalidTemplateTypeError,
     MappingConfigError,
@@ -43,6 +45,7 @@ from dis_core.errors import (
     RlsContextError,
     StorageError,
     StoreStateConflictError,
+    SuperAdminRequiredError,
     TenantScopeError,
     UploadRequestError,
     UploadStructureError,
@@ -60,6 +63,10 @@ _STATUS_BY_ERROR: dict[type[DisError], int] = {
     AuthTokenError: 401,
     TenantScopeError: 403,
     OpsRoleRequiredError: 403,
+    # Atlas console (A4).
+    SuperAdminRequiredError: 403,  # not a Super Admin
+    DraftNotRatifiedError: 422,  # publish blocked: curated attributes still inferred
+    DraftStateConflictError: 409,  # editing a locked/published draft
     # Slice 14b data endpoints (contract §2.3 + §7).
     MappingConfigError: 400,  # rules fail the D49 shape or the semantic gate
     InvalidTemplateTypeError: 400,  # template_type outside the in-code vocabulary (14d)

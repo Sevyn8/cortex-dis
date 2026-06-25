@@ -19,7 +19,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from dis_codegen.draft_ir import assemble_draft_ir, emit_draft_ir, validate_draft_ir
+from dis_codegen.draft_ir import assemble_draft_ir, emit_draft_ir, validate_fresh_draft
 from dis_codegen.ir import FieldIR, ProducedBy, SchemaIR, load_ir
 
 # Profiler import is a TEST-only cross-package reference (no production dependency).
@@ -81,7 +81,7 @@ def _assemble_retail_draft(proposal_payload: dict[str, Any] | None = None) -> Sc
 
 def test_assembled_draft_validates_and_round_trips_through_the_a1_loader(tmp_path: Path) -> None:
     draft = _assemble_retail_draft()
-    validate_draft_ir(draft)  # must not raise
+    validate_fresh_draft(draft)  # must not raise
     out = tmp_path / "retail.draft.ir.yaml"
     out.write_text(emit_draft_ir(draft))
     reloaded = load_ir(out)  # the A1 loader reads the draft (provenance round-trips)
@@ -194,4 +194,4 @@ def test_validate_rejects_a_mapping_field_marked_human() -> None:
     fields[idx] = replace(fields[idx], origin="human")
     bad = replace(draft, tables=(replace(draft.tables[0], fields=tuple(fields)),))
     with pytest.raises(ValueError, match="origin inferred"):
-        validate_draft_ir(bad)
+        validate_fresh_draft(bad)
