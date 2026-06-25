@@ -8,6 +8,7 @@ The PATCH request edits mapping-produced fields and ratifies (flips ``origin`` t
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -46,6 +47,22 @@ class AtlasTableModel(BaseModel):
     sink: str
     natural_key: list[str]
     fields: list[AtlasFieldModel]
+
+
+class DraftSummaryModel(BaseModel):
+    """One registry row (the verticals/drafts registry surface). LEAN: no IR document.
+
+    The full IR is GET /atlas/drafts/{id}; this list never carries the SchemaIR.
+    Timestamps are nullable: only the durable store has them (the in-memory double None)."""
+
+    draft_id: str
+    vertical: str
+    table_key: str
+    status: str
+    schema_version: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    published_at: datetime | None = None
 
 
 class AtlasDraftResponse(BaseModel):

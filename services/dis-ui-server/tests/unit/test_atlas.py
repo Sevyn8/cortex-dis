@@ -210,3 +210,68 @@ def test_update_after_publish_conflicts(atlas_client: TestClient, mint_token: To
     )
     assert conflict.status_code == 409
     assert conflict.json()["error"]["code"] == "draft_state_conflict"
+
+
+# --- (PR3a) GET /atlas/drafts registry list -----------------------------------------
+
+
+def _ratify_and_publish(client: TestClient, headers: dict[str, str], draft_id: str) -> None:
+    client.patch(
+        f"{_API}/atlas/drafts/{draft_id}",
+        json={"natural_key": ["sku_id"], "fields": [{"name": "sku_id", "origin": "human"}]},
+        headers=headers,
+    )
+    assert client.post(f"{_API}/atlas/drafts/{draft_id}/publish", headers=headers).status_code == 200
+
+
+def test_list_drafts_returns_lean_summaries(atlas_client: TestClient, mint_token: TokenMinter) -> None:
+    headers = _admin(mint_token)
+    a = _create_draft(atlas_client, headers)
+    b = _create_draft(atlas_client, headers)
+    resp = atlas_client.get(f"{_API}/atlas/drafts", headers=headers)
+    assert resp.status_code == 200
+    rows = resp.json()
+    assert {r["draft_id"] for r in rows} == {a, b}
+    for row in rows:
+        # Lean: the registry row carries the summary keys, never the full IR document.
+        assert set(row) == {
+            "draft_id",
+            "vertical",
+            "table_key",
+            "status",
+            "schema_version",
+            "created_at",
+            "updated_at",
+            "published_at",
+        }
+        assert "table" not in row and "fields" not in row and "ir" not in row
+        assert row["vertical"] == "retail"
+        assert row["table_key"] == "store_sku_current_position"
+        assert row["status"] == "draft"
+
+
+def test_list_status_filter_is_server_side(atlas_client: TestClient, mint_token: TokenMinter) -> None:
+    headers = _admin(mint_token)
+    draft_only = _create_draft(atlas_client, headers)
+    published = _create_draft(atlas_client, headers)
+    _ratify_and_publish(atlas_client, headers, published)
+
+    all_rows = atlas_client.get(f"{_API}/atlas/drafts", headers=headers).json()
+    assert {r["draft_id"] for r in all_rows} == {draft_only, published}  # absent = all
+
+    draft_rows = atlas_client.get(f"{_API}/atlas/drafts?status=draft", headers=headers).json()
+    assert {r["draft_id"] for r in draft_rows} == {draft_only}
+
+    pub_rows = atlas_client.get(f"{_API}/atlas/drafts?status=published", headers=headers).json()
+    assert {r["draft_id"] for r in pub_rows} == {published}
+    assert pub_rows[0]["status"] == "published"
+
+    # An unknown status is rejected by FastAPI validation (the Literal query param).
+    assert atlas_client.get(f"{_API}/atlas/drafts?status=bogus", headers=headers).status_code == 422
+
+
+def test_list_drafts_super_admin_gate(atlas_client: TestClient, mint_token: TokenMinter) -> None:
+    ops_token = mint_token(user_type="PLATFORM", tenant_id=None, roles=("dis:ops",))
+    resp = atlas_client.get(f"{_API}/atlas/drafts", headers={"Authorization": f"Bearer {ops_token}"})
+    assert resp.status_code == 403
+    assert resp.json()["error"]["code"] == "super_admin_required"

@@ -15,9 +15,9 @@ from __future__ import annotations
 import tempfile
 from dataclasses import replace
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Form, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 
 # BOUNDARY (A4): the BFF uses dis-codegen for PURE IR ops only (assemble + the
 # ratify gate + the fresh-draft validator). It MUST NOT import the generator
@@ -45,6 +45,7 @@ from dis_ui_server.infer.proposer import proposals_to_payload
 from dis_ui_server.schemas.atlas import (
     AtlasDraftResponse,
     DraftPatch,
+    DraftSummaryModel,
     PublishReceipt,
     draft_to_wire,
 )
@@ -116,6 +117,33 @@ async def create_draft(
     store = request.app.state.atlas_store
     draft_id = await store.create(draft)
     return draft_to_wire(draft_id, draft)
+
+
+@router.get("/atlas/drafts")
+async def list_drafts(
+    request: Request,
+    _admin: Annotated[Identity, Depends(require_super_admin)],
+    status: Annotated[Literal["draft", "published", "superseded"] | None, Query()] = None,
+) -> list[DraftSummaryModel]:
+    """The verticals/drafts registry: a LEAN list (no IR document; the full IR is
+    GET /atlas/drafts/{id}). Optional ``?status=`` filters server-side; absent = all.
+    FastAPI validates the status value against the vocabulary (422 on an unknown one)."""
+    summaries = await request.app.state.atlas_store.list_drafts()
+    if status is not None:
+        summaries = [s for s in summaries if s.status == status]
+    return [
+        DraftSummaryModel(
+            draft_id=s.draft_id,
+            vertical=s.vertical,
+            table_key=s.table_key,
+            status=s.status,
+            schema_version=s.schema_version,
+            created_at=s.created_at,
+            updated_at=s.updated_at,
+            published_at=s.published_at,
+        )
+        for s in summaries
+    ]
 
 
 @router.get("/atlas/drafts/{draft_id}")
