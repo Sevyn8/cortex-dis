@@ -114,7 +114,7 @@ async def create_draft(
         )
     validate_fresh_draft(draft)  # assembly-time sanity (NOT the publish gate)
     store = request.app.state.atlas_store
-    draft_id = store.create(draft)
+    draft_id = await store.create(draft)
     return draft_to_wire(draft_id, draft)
 
 
@@ -124,7 +124,7 @@ async def get_draft(
     request: Request,
     _admin: Annotated[Identity, Depends(require_super_admin)],
 ) -> AtlasDraftResponse:
-    draft = request.app.state.atlas_store.get(draft_id)
+    draft = await request.app.state.atlas_store.get(draft_id)
     return draft_to_wire(draft_id, draft)
 
 
@@ -140,9 +140,9 @@ async def patch_draft(
     ``origin in {inferred, human}`` (Literal-enforced); the fresh-draft validator is NOT
     run here (a ratified draft fails it by design)."""
     store = request.app.state.atlas_store
-    draft = store.get(draft_id)
+    draft = await store.get(draft_id)
     updated = _apply_patch(draft, patch, draft_id=draft_id)
-    store.update(draft_id, updated)
+    await store.update(draft_id, updated)
     return draft_to_wire(draft_id, updated)
 
 
@@ -157,14 +157,14 @@ async def publish_draft(
     store freezes an immutable versioned IR (freeze re-runs the gate intrinsically)
     and a publish audit event is emitted (fire-and-forget)."""
     store = request.app.state.atlas_store
-    draft = store.get(draft_id)
+    draft = await store.get(draft_id)
     violations = ratify_violations(draft)  # the SAME check freeze enforces
     if violations:
         raise DraftNotRatifiedError(
             "draft has unratified curated attributes; ratify them before publishing",
             violations=tuple(violations),
         )
-    frozen = store.freeze(draft_id, version=draft.schema_version)
+    frozen = await store.freeze(draft_id, version=draft.schema_version)
     audit_emitted = _emit_publish_audit(request, draft_id, frozen)
     return PublishReceipt(
         draft_id=draft_id,

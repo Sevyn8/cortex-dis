@@ -36,11 +36,11 @@ class DraftStore(Protocol):
     """Persistence for Atlas draft IRs. The gate lives in ``freeze``, not the store's
     callers, so freeze cannot be bypassed by writing a published status directly."""
 
-    def create(self, draft: SchemaIR) -> str: ...
-    def get(self, draft_id: str) -> SchemaIR: ...
-    def update(self, draft_id: str, draft: SchemaIR) -> None: ...
-    def freeze(self, draft_id: str, version: int) -> SchemaIR: ...
-    def list_drafts(self) -> list[DraftSummary]: ...
+    async def create(self, draft: SchemaIR) -> str: ...
+    async def get(self, draft_id: str) -> SchemaIR: ...
+    async def update(self, draft_id: str, draft: SchemaIR) -> None: ...
+    async def freeze(self, draft_id: str, version: int) -> SchemaIR: ...
+    async def list_drafts(self) -> list[DraftSummary]: ...
 
 
 class InMemoryDraftStore:
@@ -49,12 +49,12 @@ class InMemoryDraftStore:
     def __init__(self) -> None:
         self._drafts: dict[str, SchemaIR] = {}
 
-    def create(self, draft: SchemaIR) -> str:
+    async def create(self, draft: SchemaIR) -> str:
         draft_id = str(new_uuid7())
         self._drafts[draft_id] = draft
         return draft_id
 
-    def get(self, draft_id: str) -> SchemaIR:
+    async def get(self, draft_id: str) -> SchemaIR:
         try:
             return self._drafts[draft_id]
         except KeyError:
@@ -62,12 +62,12 @@ class InMemoryDraftStore:
                 "atlas draft not found", resource="atlas_draft", identifier=draft_id
             ) from None
 
-    def update(self, draft_id: str, draft: SchemaIR) -> None:
+    async def update(self, draft_id: str, draft: SchemaIR) -> None:
         """Persist edits to a draft. Refuses if the stored draft is no longer a draft
         (published versions are immutable) or if the edit tries to change status:
         ``freeze`` is the only publish transition, so ``update`` can never reach
         ``published``."""
-        current = self.get(draft_id)
+        current = await self.get(draft_id)
         if current.status != "draft":
             raise DraftStateConflictError(
                 "cannot edit a non-draft version (published versions are immutable)",
@@ -84,11 +84,11 @@ class InMemoryDraftStore:
             )
         self._drafts[draft_id] = draft
 
-    def freeze(self, draft_id: str, version: int) -> SchemaIR:
+    async def freeze(self, draft_id: str, version: int) -> SchemaIR:
         """The SOLE transition to ``published``. Runs the ratify gate intrinsically
         (``assert_ratified_for_publish``) before freezing, so no caller can publish an
         unratified draft. Returns the frozen, immutable, versioned IR."""
-        current = self.get(draft_id)
+        current = await self.get(draft_id)
         if current.status != "draft":
             raise DraftStateConflictError(
                 "only a draft can be frozen",
@@ -101,7 +101,7 @@ class InMemoryDraftStore:
         self._drafts[draft_id] = frozen
         return frozen
 
-    def list_drafts(self) -> list[DraftSummary]:
+    async def list_drafts(self) -> list[DraftSummary]:
         return [
             DraftSummary(draft_id, s.vertical, s.status, s.schema_version)
             for draft_id, s in self._drafts.items()
