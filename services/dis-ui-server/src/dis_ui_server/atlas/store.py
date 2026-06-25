@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from sqlalchemy import text
@@ -29,12 +30,21 @@ from dis_rls import rls_platform_session
 
 @dataclass(frozen=True)
 class DraftSummary:
-    """One row of the verticals/drafts registry (the A4 registry surface)."""
+    """One row of the verticals/drafts registry (the A4 registry surface) — LEAN: no IR.
+
+    PR3a additively enriches this with ``table_key`` and the timestamps the registry
+    surface shows. The timestamps are Optional because only the durable store has them:
+    the in-memory double tracks none and returns ``None``. The five ``DraftStore`` method
+    signatures, the ratify gate, and the draft/publish endpoints are unchanged."""
 
     draft_id: str
     vertical: str
+    table_key: str
     status: str
     schema_version: int
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+    published_at: datetime | None = None
 
 
 @runtime_checkable
@@ -108,8 +118,15 @@ class InMemoryDraftStore:
         return frozen
 
     async def list_drafts(self) -> list[DraftSummary]:
+        # table_key from the SchemaIR; the in-memory double tracks no timestamps (None).
         return [
-            DraftSummary(draft_id, s.vertical, s.status, s.schema_version)
+            DraftSummary(
+                draft_id=draft_id,
+                vertical=s.vertical,
+                table_key=s.tables[0].key,
+                status=s.status,
+                schema_version=s.schema_version,
+            )
             for draft_id, s in self._drafts.items()
         ]
 
@@ -223,10 +240,25 @@ class PostgresDraftStore:
             rows = (
                 (
                     await conn.execute(
-                        text("SELECT id, vertical, status, schema_version FROM atlas.schema_drafts")
+                        text(
+                            "SELECT id, vertical, table_key, status, schema_version, "
+                            "created_at, updated_at, published_at FROM atlas.schema_drafts"
+                        )
                     )
                 )
                 .mappings()
                 .all()
             )
-        return [DraftSummary(str(r["id"]), r["vertical"], r["status"], r["schema_version"]) for r in rows]
+        return [
+            DraftSummary(
+                draft_id=str(r["id"]),
+                vertical=r["vertical"],
+                table_key=r["table_key"],
+                status=r["status"],
+                schema_version=r["schema_version"],
+                created_at=r["created_at"],
+                updated_at=r["updated_at"],
+                published_at=r["published_at"],
+            )
+            for r in rows
+        ]
