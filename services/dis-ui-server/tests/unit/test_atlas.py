@@ -21,6 +21,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from dis_ui_server.atlas import InMemoryDraftStore
 from dis_ui_server.infer.proposer import FieldProposer
 from dis_ui_server.main import create_app
 from dis_ui_server.suggest.vertex_client import VertexClient
@@ -40,6 +41,10 @@ def atlas_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("STORAGE_EMULATOR_HOST", "http://127.0.0.1:9")
     app = create_app()
     with TestClient(app) as client:
+        # Keep the no-DB handler tests on the in-memory double: production now wires
+        # PostgresDraftStore (PR2), so these tests inject the in-memory store the same
+        # way they inject the fake proposer. Assertions are unchanged from PR1.
+        cast(FastAPI, client.app).state.atlas_store = InMemoryDraftStore()
         yield client
 
 

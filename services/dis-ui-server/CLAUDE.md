@@ -12,7 +12,7 @@ For the EPE block (purpose, entry, process, exit), file structure, and operation
 
 ## Rules specific to this service
 
-- Writes to: `config.source_mappings` (mapping authoring); the bronze GCS bucket (the Slice 8 CSV-upload object, canonical D53 path via `dis-storage` only); `audit.events` via `dis-audit` (fire-and-forget); Pub/Sub `csv.received` (the Slice 8 upload trigger, D54), `mapping.changed` (notify streaming consumer on active mapping change), and `ingress.resubmit` (resubmit from quarantine console). Do not write to other tables or topics from here. NEVER bronze tables (the worker owns bronze).
+- Writes to: `config.source_mappings` (mapping authoring); `atlas.schema_drafts` (the Atlas console draft/published IR store, platform-scoped/non-RLS via `rls_platform_session`, D104); the bronze GCS bucket (the Slice 8 CSV-upload object, canonical D53 path via `dis-storage` only); `audit.events` via `dis-audit` (fire-and-forget); Pub/Sub `csv.received` (the Slice 8 upload trigger, D54), `mapping.changed` (notify streaming consumer on active mapping change), and `ingress.resubmit` (resubmit from quarantine console). Do not write to other tables or topics from here. NEVER bronze tables (the worker owns bronze).
 - Reads from: Cloud SQL read replica (canonical), Cloud SQL `audit.events` (Phase 1; BigQuery `audit_events` from Phase 3 onward per D34), `config.source_mappings`, `quarantine.*`, `identity_mirror` (via identity-service).
 - All Postgres access uses `libs/dis-rls`. No raw SQLAlchemy sessions.
 - Audit reads from Cloud SQL `audit.events` in Phase 1 via standard repos. BigQuery via `libs/dis-core` BqClient lands in Phase 3 (BqClient is a stub in Phase 1).

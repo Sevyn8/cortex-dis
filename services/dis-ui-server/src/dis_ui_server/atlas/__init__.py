@@ -10,6 +10,11 @@ immutable versioned IR and writes an audit event; A1 code generation is out-of-b
 
 from __future__ import annotations
 
-from dis_ui_server.atlas.store import DraftStore, DraftSummary, InMemoryDraftStore
+from dis_ui_server.atlas.store import (
+    DraftStore,
+    DraftSummary,
+    InMemoryDraftStore,
+    PostgresDraftStore,
+)
 
-__all__ = ["DraftStore", "DraftSummary", "InMemoryDraftStore"]
+__all__ = ["DraftStore", "DraftSummary", "InMemoryDraftStore", "PostgresDraftStore"]
