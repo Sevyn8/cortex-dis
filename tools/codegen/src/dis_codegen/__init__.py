@@ -23,6 +23,7 @@ from dis_codegen.draft_ir import (
     emit_draft_ir,
     is_curated_bearing,
     ratify_violations,
+    schema_to_document,
     validate_fresh_draft,
 )
 from dis_codegen.generate import DdlSubset, render_ddl, render_model, render_provenance
@@ -45,6 +46,7 @@ __all__ = [
     "load_ir",
     "ratify_violations",
     "render_ddl",
+    "schema_to_document",
     "render_model",
     "render_provenance",
     "type_signature",

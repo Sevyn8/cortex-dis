@@ -235,6 +235,16 @@ def _field_to_dict(f: FieldIR) -> dict[str, Any]:
     out["mandatory"] = f.mandatory
     out["produced_by"] = f.produced_by.value
     out["origin"] = f.origin
+    # Section-3 fields previously dropped by this emitter: emit them so the document
+    # is LOSSLESS (parse_ir reads them all). Required for faithful persistence (PR2).
+    if f.enum_ref is not None:
+        out["enum_ref"] = f.enum_ref
+    if f.display_name is not None:
+        out["display_name"] = f.display_name
+    if f.description is not None:
+        out["description"] = f.description
+    if f.section is not None:
+        out["section"] = f.section
     if f.pii is not None:
         out["pii"] = f.pii
     if f.enum_candidate:
@@ -250,23 +260,45 @@ def _field_to_dict(f: FieldIR) -> dict[str, Any]:
     return out
 
 
-def emit_draft_ir(schema: SchemaIR) -> str:
-    """Render the draft SchemaIR to YAML (the section-3 handoff artifact)."""
-    table = schema.tables[0]
-    doc: dict[str, Any] = {
+def _table_to_dict(table: TableIR) -> dict[str, Any]:
+    return {
+        "key": table.key,
+        "template_type": table.template_type,
+        "semantics": table.semantics,
+        "sink": table.sink,
+        "natural_key": list(table.natural_key),
+        "fields": [_field_to_dict(f) for f in table.fields],
+    }
+
+
+def schema_to_document(schema: SchemaIR) -> dict[str, Any]:
+    """The single SchemaIR -> dict serializer, LOSSLESS over the section-3 shape.
+
+    Reused by :func:`emit_draft_ir` (YAML handoff) and the PostgresDraftStore (JSONB
+    column), so there is exactly one IR document shape. Every field it writes is read
+    back by ``ir.parse_ir``; the round-trip equality is guarded by a property test.
+    Includes the top-level ``types`` and ``enums`` blocks (previously omitted).
+    """
+    return {
         "vertical": schema.vertical,
         "schema_version": schema.schema_version,
         "status": schema.status,
         "system_profile": schema.system_profile,
-        "tables": [
-            {
-                "key": table.key,
-                "template_type": table.template_type,
-                "semantics": table.semantics,
-                "sink": table.sink,
-                "natural_key": list(table.natural_key),
-                "fields": [_field_to_dict(f) for f in table.fields],
+        "types": {
+            name: {
+                "base": t.base,
+                "precision": t.precision,
+                "scale": t.scale,
+                "max_length": t.max_length,
+                "min_length": t.min_length,
             }
-        ],
+            for name, t in schema.types.items()
+        },
+        "enums": {name: list(values) for name, values in schema.enums.items()},
+        "tables": [_table_to_dict(t) for t in schema.tables],
     }
-    return yaml.safe_dump(doc, sort_keys=False)
+
+
+def emit_draft_ir(schema: SchemaIR) -> str:
+    """Render the draft SchemaIR to YAML (the section-3 handoff artifact)."""
+    return yaml.safe_dump(schema_to_document(schema), sort_keys=False)
