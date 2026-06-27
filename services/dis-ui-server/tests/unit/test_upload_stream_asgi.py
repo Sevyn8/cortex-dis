@@ -36,26 +36,28 @@ _CHUNK = 256 * 1024  # 256 KiB per ASGI http.request message
 
 
 def _token() -> str:
-    # The dev-stub contract (auth/verifier.py constants), minted inline so this
-    # module needs no fixture plumbing beyond the env.
-    from dis_ui_server.auth.verifier import (
-        DEV_STUB_ALGORITHM,
-        DEV_STUB_AUDIENCE,
-        DEV_STUB_ISSUER,
-        DEV_STUB_SECRET,
-    )
+    # A real Customer-Master-shaped RS256 token (namespaced claims), minted inline
+    # so this module needs no fixture plumbing. The conftest autouse verifier
+    # (_inject_rs256_verifier) resolves it against the committed test JWKS — the
+    # same in-process, no-network seam the rest of the suite uses.
+    from dis_testing import fixtures as fx
+    from dis_ui_server.config import DEFAULT_JWT_AUDIENCE, DEFAULT_JWT_ISSUER
 
+    ns = "https://sevyn8.com/"
     now = int(time.time())
     payload = {
         "sub": "user-asgi",
-        "iss": DEV_STUB_ISSUER,
-        "aud": DEV_STUB_AUDIENCE,
+        "iss": DEFAULT_JWT_ISSUER,
+        "aud": DEFAULT_JWT_AUDIENCE,
         "iat": now,
         "exp": now + 600,
-        "tenant_id": "019e5e3c-b5d3-705f-9002-2451c4ca2626",
-        "user_type": "TENANT",
+        ns + "user_id": "user-asgi",
+        ns + "tenant_id": "019e5e3c-b5d3-705f-9002-2451c4ca2626",
+        ns + "user_type": "TENANT",
     }
-    return jwt.encode(payload, DEV_STUB_SECRET, algorithm=DEV_STUB_ALGORITHM)
+    return jwt.encode(
+        payload, fx.TEST_RSA_PRIVATE_KEY_PEM, algorithm=fx.TEST_JWT_ALG, headers={"kid": fx.TEST_JWT_KID}
+    )
 
 
 def _oversized_multipart_body() -> bytes:
