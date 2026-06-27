@@ -34,9 +34,13 @@ startup — the engine is lazy and the first connect happens in ``/readyz``,
 which degrades to 503. That split is the liveness/readiness foundation this
 slice is built on and is test-pinned.
 
-The dev-stub verifier parameters are NOT config: they are contract-pinned
-constants in ``auth/verifier.py`` (byte-identical to the UI's ``/dev/login``
-stub so dev tokens round-trip; env-overridable values would invite drift).
+The Customer Master / Auth0 verifier parameters (13b, D25) ARE config:
+``jwt_issuer`` / ``jwt_audience`` / ``jwt_jwks_url`` are resolved here so the
+RS256/JWKS verifier (``auth/verifier.py``) can be steered per environment. They
+default to the fixed production values (the real Auth0 issuer and the shared
+audience) and are env-overridable; the JWKS URL derives from the issuer when
+unset. (The retired dev-stub's params were deliberately NOT config, to keep the
+two HS256 sides from drifting — that constraint died with the dev stub.)
 """
 
 from __future__ import annotations
@@ -56,6 +60,20 @@ _GEMINI_VERTEX_PROJECT = "GEMINI_VERTEX_PROJECT"
 _GEMINI_VERTEX_LOCATION = "GEMINI_VERTEX_LOCATION"
 # OPTIONAL: SA to impersonate for Vertex calls only (unset -> ambient ADC).
 _GEMINI_IMPERSONATE_SA = "GEMINI_IMPERSONATE_SA"
+# Customer Master / Auth0 verifier parameters (13b, D25). Env-overridable per
+# environment; the JWKS URL derives from the issuer when unset.
+_JWT_ISSUER = "JWT_ISSUER"
+_JWT_AUDIENCE = "JWT_AUDIENCE"
+_JWT_JWKS_URL = "JWT_JWKS_URL"
+
+# The real Customer Master / Auth0 verifier values. These are fixed
+# per-deployment identifiers, not secrets and not placeholders, so the default
+# IS the correct production value (unlike a rule-4 "silent default for a required
+# value"). They stay env-overridable because the real verifier — unlike the
+# retired dev-stub, whose params were deliberately constants to prevent drift —
+# must be steerable per environment.
+DEFAULT_JWT_ISSUER = "https://sevyn8.us.auth0.com/"  # trailing slash (Auth0 iss form)
+DEFAULT_JWT_AUDIENCE = "https://api.cortex.sevyn8.com"  # SHARED with Customer Master
 
 SERVICE_NAME = "dis-ui-server"
 
@@ -106,6 +124,12 @@ class UiServerConfig:
     postgres_url: str
     gcs_bucket_bronze: str
     pubsub_project_id: str
+    # Customer Master / Auth0 verifier params (13b, D25): the RS256/JWKS verifier
+    # reads these. Always resolved (production defaults, env-overridable); the
+    # JWKS URL derives from the issuer when its env is unset.
+    jwt_issuer: str
+    jwt_audience: str
+    jwt_jwks_url: str
     # OPTIONAL Vertex AI config (see module docstring); never required. Both unset -> fallback.
     gemini_vertex_project: str | None = None
     gemini_vertex_location: str | None = None
@@ -132,6 +156,12 @@ class UiServerConfig:
             raise DisError(
                 f"{_PUBSUB_PROJECT_ID} is not set; the CSV upload cannot publish {CSV_RECEIVED_TOPIC!r}"
             )
+        # Auth0/CM verifier params: production defaults (the correct fixed values,
+        # env-overridable), with the JWKS URL derived from the issuer when unset —
+        # the issuer already carries the trailing slash Auth0 uses.
+        jwt_issuer = os.environ.get(_JWT_ISSUER) or DEFAULT_JWT_ISSUER
+        jwt_audience = os.environ.get(_JWT_AUDIENCE) or DEFAULT_JWT_AUDIENCE
+        jwt_jwks_url = os.environ.get(_JWT_JWKS_URL) or f"{jwt_issuer}.well-known/jwks.json"
         # OPTIONAL: read with no raise. Both unset -> the suggester uses the mechanical
         # fallback; missing Vertex config must never abort startup (FM1/FM2).
         gemini_vertex_project = os.environ.get(_GEMINI_VERTEX_PROJECT) or None
@@ -141,6 +171,9 @@ class UiServerConfig:
             postgres_url=postgres_url,
             gcs_bucket_bronze=gcs_bucket_bronze,
             pubsub_project_id=pubsub_project_id,
+            jwt_issuer=jwt_issuer,
+            jwt_audience=jwt_audience,
+            jwt_jwks_url=jwt_jwks_url,
             gemini_vertex_project=gemini_vertex_project,
             gemini_vertex_location=gemini_vertex_location,
             gemini_impersonate_sa=gemini_impersonate_sa,

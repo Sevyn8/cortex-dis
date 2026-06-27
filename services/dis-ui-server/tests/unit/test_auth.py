@@ -72,7 +72,17 @@ def test_expired_token_is_401(client: TestClient, mint_token: Callable[..., str]
 
 
 def test_wrong_signature_is_401(client: TestClient, mint_token: Callable[..., str]) -> None:
-    token = mint_token(secret="some-other-secret-long-enough-for-hs256-minimums")
+    # Signed with the real kid but a key absent from the JWKS: the verifier selects
+    # the genuine public key and the RS256 signature check fails.
+    token = mint_token(wrong_key=True)
+    response = client.get("/api/v1/probe/tenant", headers=_bearer(token))
+    assert response.status_code == 401
+    assert _error_code(response.json()) == "auth_token"
+
+
+def test_unknown_kid_is_401(client: TestClient, mint_token: Callable[..., str]) -> None:
+    # JWKS key-not-found (fail-closed): the header kid matches no key in the JWKS.
+    token = mint_token(kid="not-in-the-jwks")
     response = client.get("/api/v1/probe/tenant", headers=_bearer(token))
     assert response.status_code == 401
     assert _error_code(response.json()) == "auth_token"
@@ -86,7 +96,7 @@ def test_wrong_issuer_is_401(client: TestClient, mint_token: Callable[..., str])
 
 
 def test_wrong_audience_is_401(client: TestClient, mint_token: Callable[..., str]) -> None:
-    token = mint_token(audience="not-dis")
+    token = mint_token(audience="https://not-the-shared-audience")
     response = client.get("/api/v1/probe/tenant", headers=_bearer(token))
     assert response.status_code == 401
     assert _error_code(response.json()) == "auth_token"

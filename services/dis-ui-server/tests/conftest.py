@@ -7,9 +7,11 @@ mechanism, the auth dependencies, and the registered exception handlers.
 ``POSTGRES_URL`` points at a parseable but UNREACHABLE address (a
 non-listening localhost port): startup must succeed (the engine is lazy),
 ``/healthz`` must serve, and ``/readyz`` must degrade — the
-liveness/readiness split these tests pin. Tokens are minted in-test with the
-contract §2.1 dev-stub parameters (byte-identical to dis-ui's ``/dev/login``);
-NOT the dis-testing RS256 CM-fake fixtures, which are the 13b JWKS target.
+liveness/readiness split these tests pin. Tokens are minted in-test as real
+Customer-Master-shaped RS256 JWTs (13b/D25): signed with the committed
+dis-testing test key and namespaced under ``https://sevyn8.com/``, verified
+in-process against the test JWKS via an injected no-network verifier
+(``_inject_rs256_verifier`` + ``_StaticJwkClient``) — no Auth0, no network.
 
 INTEGRATION half — proves ``/readyz`` against the LIVE local stack
 (``ithina_dis_db`` on 5433; Customer Master on 5432 is never touched), so —
@@ -21,13 +23,16 @@ skip. Read-only by construction: the readiness probe runs one scoped
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from collections.abc import Iterator
+from types import SimpleNamespace
 from typing import Annotated, Any, Protocol
 
 import jwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import APIRouter, Depends
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
@@ -43,15 +48,18 @@ from dis_core.errors import (
     TenantScopeError,
 )
 from dis_core.trace_id import bind_trace_id, new_trace_id
+from dis_testing import fixtures as fx
+from dis_testing.fakes.customer_master import build_jwks
+from dis_ui_server.auth import verifier as verifier_module
 from dis_ui_server.auth.identity import Identity
 from dis_ui_server.auth.scope import require_ops, require_tenant
-from dis_ui_server.auth.verifier import (
-    DEV_STUB_ALGORITHM,
-    DEV_STUB_AUDIENCE,
-    DEV_STUB_ISSUER,
-    DEV_STUB_SECRET,
-)
+from dis_ui_server.auth.verifier import TokenVerifier
+from dis_ui_server.config import DEFAULT_JWT_AUDIENCE, DEFAULT_JWT_ISSUER
 from dis_ui_server.main import create_app
+
+# The Customer Master claim namespace the RS256 verifier reads (mirrors
+# auth/verifier.py). Tokens minted here carry the application claims here.
+_CLAIMS_NAMESPACE = "https://sevyn8.com/"
 
 # -- unit fixtures ----------------------------------------------------------------
 
@@ -79,6 +87,58 @@ TENANT_A = "019e5e3c-b5d3-705f-9002-2451c4ca2626"  # buc-ees
 TENANT_B = "019e5e3c-b5d6-7eed-93f9-3778a7a7a160"  # zabka-group
 
 
+# A second RSA key whose public half is NOT in the test JWKS — used by the
+# wrong-signature case (mint with the real kid but this key, so the verifier
+# selects the genuine public key and the signature check fails). Generated once
+# per test process; never shared, carries no authority.
+_WRONG_RSA_PRIVATE_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+
+
+class _StaticJwkClient:
+    """No-network JWKS signing-key resolver (the ``verify_cm_jwt`` recipe).
+
+    Selects the JWK by ``kid`` from a static JWKS dict and builds the public key.
+    STRICT: an unknown ``kid`` raises (like the real :class:`jwt.PyJWKClient`), so
+    the key-not-found rejection is a true 401 rather than a silent single-key
+    fallback. Returns a ``.key``-bearing shim matching :class:`jwt.PyJWK`.
+    """
+
+    def __init__(self, jwks: dict[str, Any]) -> None:
+        self._keys: dict[str, dict[str, Any]] = {jwk["kid"]: jwk for jwk in jwks["keys"]}
+
+    def get_signing_key_from_jwt(self, token: str, /) -> Any:
+        # get_unverified_header raises PyJWTError on a malformed token — the
+        # verifier maps that to a coarse 401, same as the real client.
+        kid = jwt.get_unverified_header(token).get("kid")
+        jwk = self._keys.get(kid) if kid is not None else None
+        if jwk is None:
+            raise jwt.PyJWKClientError(f"no JWKS key matched kid={kid!r}")
+        key = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(jwk))
+        return SimpleNamespace(key=key)
+
+
+@pytest.fixture(autouse=True)
+def _inject_rs256_verifier() -> Iterator[None]:
+    """Inject the no-network RS256 verifier for the whole suite (unit + integration).
+
+    Issuer/audience are pinned to the config production defaults (so tokens minted
+    with the default iss/aud verify), and keys resolve from the committed test
+    JWKS via :class:`_StaticJwkClient` — no real network, no Auth0. The module
+    singleton is reset after each test so verifier state never leaks across tests.
+    Both the HTTP path (``get_current_identity`` -> ``verify_token``) and the
+    direct ``verify_token(...)`` unit calls go through this injected verifier.
+    """
+    verifier_module.set_verifier(
+        TokenVerifier(
+            issuer=DEFAULT_JWT_ISSUER,
+            audience=DEFAULT_JWT_AUDIENCE,
+            jwk_client=_StaticJwkClient(build_jwks()),
+        )
+    )
+    yield
+    verifier_module.set_verifier(None)
+
+
 class TokenMinter(Protocol):
     def __call__(
         self,
@@ -91,18 +151,26 @@ class TokenMinter(Protocol):
         expires_in: int = ...,
         issuer: str = ...,
         audience: str = ...,
-        secret: str = ...,
+        kid: str = ...,
+        wrong_key: bool = ...,
         omit: tuple[str, ...] = ...,
     ) -> str: ...
 
 
 @pytest.fixture
 def mint_token() -> TokenMinter:
-    """Mint dev-stub-shaped HS256 tokens, with knobs for every failure mode.
+    """Mint Customer-Master-shaped RS256 tokens, with knobs for every failure mode.
 
-    Slice 17b adds the required ``user_type`` claim (default ``"TENANT"`` so existing
-    callers stay valid under the now-mandatory claim). The 3 interim token personas
-    (token contract; the impersonation TARGET is a request-body field, NOT a claim):
+    Signed RS256 with the committed test key (``fx.TEST_RSA_PRIVATE_KEY_PEM``,
+    ``kid=fx.TEST_JWT_KID``) whose public half is in the test JWKS the injected
+    verifier resolves against. ``sub`` stays the standard subject; the application
+    claims are NAMESPACED under ``https://sevyn8.com/`` (``user_id`` defaults to the
+    ``sub`` value, so ``mint_token(sub="user-1")`` yields ``Identity.user_id ==
+    "user-1"``). The signature, defaults, and persona usage are unchanged for every
+    existing caller; only the wire format (RS256 + namespaced) and two knobs differ.
+
+    The 3 interim token personas (the impersonation TARGET is a request-body field,
+    NOT a claim):
 
     - TENANT:               mint_token(user_type="TENANT", tenant_id=<uuid>, roles=("dis:read",))
     - PLATFORM see-all:     mint_token(user_type="PLATFORM", tenant_id=None, roles=("dis:ops", "dis:read"))
@@ -110,7 +178,10 @@ def mint_token() -> TokenMinter:
                             acted-for tenant rides the POST/PATCH body ``acting_for_tenant_id``.
 
     Reject-on-ambiguous knobs: ``user_type=None`` (or ``omit=("user_type",)``) -> absent;
-    ``user_type=""`` -> empty; ``user_type="BOGUS"`` -> unrecognized.
+    ``user_type=""`` -> empty; ``user_type="BOGUS"`` -> unrecognized. Verification-failure
+    knobs: ``expires_in<0`` -> expired; ``issuer=``/``audience=`` -> wrong iss/aud;
+    ``omit=("sub",)`` -> missing required claim; ``kid="..."`` (not in the JWKS) ->
+    key-not-found; ``wrong_key=True`` -> signed by a key absent from the JWKS (bad signature).
     """
 
     def _mint(
@@ -121,9 +192,10 @@ def mint_token() -> TokenMinter:
         roles: tuple[str, ...] | None = ("dis:read",),
         user_type: str | None = "TENANT",
         expires_in: int = 3600,
-        issuer: str = DEV_STUB_ISSUER,
-        audience: str = DEV_STUB_AUDIENCE,
-        secret: str = DEV_STUB_SECRET,
+        issuer: str = DEFAULT_JWT_ISSUER,
+        audience: str = DEFAULT_JWT_AUDIENCE,
+        kid: str = fx.TEST_JWT_KID,
+        wrong_key: bool = False,
         omit: tuple[str, ...] = (),
     ) -> str:
         now = int(time.time())
@@ -133,18 +205,22 @@ def mint_token() -> TokenMinter:
             "aud": audience,
             "iat": now,
             "exp": now + expires_in,
+            # The principal id is the namespaced Customer Master internal UUID; it
+            # defaults to the sub value so existing callers' user_id assertions hold.
+            _CLAIMS_NAMESPACE + "user_id": sub,
         }
         if tenant_id is not None:
-            payload["tenant_id"] = tenant_id
+            payload[_CLAIMS_NAMESPACE + "tenant_id"] = tenant_id
         if store_id is not None:
-            payload["store_id"] = store_id
+            payload[_CLAIMS_NAMESPACE + "store_id"] = store_id
         if roles is not None:
-            payload["roles"] = list(roles)
-        if user_type is not None:  # Slice 17b required claim; None/""/"BOGUS" exercise reject-on-ambiguous
-            payload["user_type"] = user_type
+            payload[_CLAIMS_NAMESPACE + "roles"] = list(roles)
+        if user_type is not None:  # required claim; None/""/"BOGUS" exercise reject-on-ambiguous
+            payload[_CLAIMS_NAMESPACE + "user_type"] = user_type
         for claim in omit:
             payload.pop(claim, None)
-        return jwt.encode(payload, secret, algorithm=DEV_STUB_ALGORITHM)
+        key = _WRONG_RSA_PRIVATE_KEY if wrong_key else fx.TEST_RSA_PRIVATE_KEY_PEM
+        return jwt.encode(payload, key, algorithm=fx.TEST_JWT_ALG, headers={"kid": kid})
 
     return _mint
 
