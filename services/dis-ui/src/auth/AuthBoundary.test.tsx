@@ -31,9 +31,10 @@ function renderAt(path: string) {
 async function expiredToken(): Promise<string> {
   const past = Math.floor(Date.now() / 1000) - 60
   return new SignJWT({
-    tenant_id: 't_acme9k2l1mn4',
-    store_id: 's_acme0001a4b7',
-    roles: ['dis:read'],
+    'https://sevyn8.com/user_id': 'u_acmeuser0001',
+    'https://sevyn8.com/tenant_id': 't_acme9k2l1mn4',
+    'https://sevyn8.com/store_id': 's_acme0001a4b7',
+    'https://sevyn8.com/roles': ['dis:read'],
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject('u_acmeuser0001')
@@ -44,9 +45,17 @@ async function expiredToken(): Promise<string> {
     .sign(KEY)
 }
 
+// These exercise the dev-stub mode path (redirect to the local /dev/login picker).
+// The Auth0-mode path (redirect to the hosted login via loginWithRedirect) is
+// covered in AuthProvider.auth0.test.tsx with the SDK mocked.
 describe('AuthBoundary', () => {
   beforeEach(() => {
     localStorage.clear()
+    vi.stubEnv('VITE_AUTH_MODE', 'dev-stub')
+  })
+
+  afterEach(() => {
+    vi.unstubAllEnvs()
   })
 
   it('renders the protected page when a valid token is stored', async () => {

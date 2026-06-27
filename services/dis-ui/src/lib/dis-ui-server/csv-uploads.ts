@@ -1,4 +1,4 @@
-import { readToken } from '../../auth/storage'
+import { getAccessToken } from './accessToken'
 import { postMultipart } from './client'
 
 // ===========================================================================================
@@ -57,12 +57,12 @@ export async function uploadCsv(args: CsvUploadArgs): Promise<CsvUploadResult> {
   return postMultipart<CsvUploadResult>('/api/v1/csv-uploads', { token: args.token, form })
 }
 
-// Convenience: read the session token from storage (the token home, auth/storage.ts) and
-// upload. Throws a clear error when no token is held (should not happen behind AuthBoundary).
-export async function uploadCsvWithSessionToken(args: Omit<CsvUploadArgs, 'token'>): Promise<CsvUploadResult> {
-  const token = readToken()
-  if (token === null || token.length === 0) {
-    throw new Error('no session token: cannot upload (sign in first)')
-  }
+// Convenience: read the bearer from the access-token seam (in-memory SDK token in
+// Auth0 mode, localStorage stub in dev-stub mode) and upload. Throws a clear error
+// when no token is held (should not happen behind AuthBoundary).
+export async function uploadCsvWithSessionToken(
+  args: Omit<CsvUploadArgs, 'token'>,
+): Promise<CsvUploadResult> {
+  const token = await getAccessToken()
   return uploadCsv({ ...args, token })
 }

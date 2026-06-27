@@ -10,7 +10,11 @@ import { DisUiServerHttpError, getJson, patchJson, postJson } from './client'
 function okResponse(body: unknown, status = 200): Response {
   return { ok: true, status, json: async () => body } as unknown as Response
 }
-function errResponse(status: number, code: string, details: Record<string, unknown> = {}): Response {
+function errResponse(
+  status: number,
+  code: string,
+  details: Record<string, unknown> = {},
+): Response {
   return {
     ok: false,
     status,
@@ -30,7 +34,9 @@ afterEach(() => {
 
 describe('client JSON helpers (T10)', () => {
   it('getJson GETs base+path with a Bearer header and parses the body', async () => {
-    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => okResponse([{ a: 1 }]))
+    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
+      okResponse([{ a: 1 }]),
+    )
     vi.stubGlobal('fetch', fetchMock)
     const out = await getJson<{ a: number }[]>('/api/v1/thing')
     expect(out).toEqual([{ a: 1 }])
@@ -41,7 +47,9 @@ describe('client JSON helpers (T10)', () => {
   })
 
   it('postJson POSTs a JSON body with content-type + Bearer', async () => {
-    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => okResponse({ ok: true }, 201))
+    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
+      okResponse({ ok: true }, 201),
+    )
     vi.stubGlobal('fetch', fetchMock)
     await postJson('/api/v1/thing', { name: 'x' })
     const [url, init] = fetchMock.mock.calls[0]
@@ -55,7 +63,9 @@ describe('client JSON helpers (T10)', () => {
   })
 
   it('patchJson PATCHes a JSON body', async () => {
-    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () => okResponse({ ok: true }))
+    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
+      okResponse({ ok: true }),
+    )
     vi.stubGlobal('fetch', fetchMock)
     await patchJson('/api/v1/thing/1', { name: 'y' })
     const [, init] = fetchMock.mock.calls[0]
@@ -64,7 +74,10 @@ describe('client JSON helpers (T10)', () => {
   })
 
   it('maps a non-2xx to DisUiServerHttpError carrying status + code + details', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => errResponse(409, 'mapping_state_conflict', { source_id: 's1' })))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => errResponse(409, 'mapping_state_conflict', { source_id: 's1' })),
+    )
     await expect(getJson('/api/v1/thing')).rejects.toMatchObject({
       name: 'DisUiServerHttpError',
       status: 409,
@@ -74,9 +87,12 @@ describe('client JSON helpers (T10)', () => {
     await expect(getJson('/api/v1/thing')).rejects.toBeInstanceOf(DisUiServerHttpError)
   })
 
-  it('throws a loud error when no session token is held', async () => {
+  it('throws a loud error when no access token is held', async () => {
     clearToken()
-    vi.stubGlobal('fetch', vi.fn(async () => okResponse([])))
-    await expect(getJson('/api/v1/thing')).rejects.toThrow(/no session token/i)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse([])),
+    )
+    await expect(getJson('/api/v1/thing')).rejects.toThrow(/no access token/i)
   })
 })
