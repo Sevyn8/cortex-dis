@@ -26,7 +26,11 @@ function okResponse(body: unknown): Response {
   return { ok: true, status: 201, json: async () => body } as unknown as Response
 }
 
-function errResponse(status: number, code: string, details: Record<string, unknown> = {}): Response {
+function errResponse(
+  status: number,
+  code: string,
+  details: Record<string, unknown> = {},
+): Response {
   return {
     ok: false,
     status,
@@ -54,8 +58,8 @@ afterEach(() => {
 
 describe('uploadCsv (real POST /api/v1/csv-uploads)', () => {
   it('sends a multipart POST with file + template_id + store_code and no source_id/intent', async () => {
-    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
-      async () => okResponse(RESULT),
+    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
+      okResponse(RESULT),
     )
     vi.stubGlobal('fetch', fetchMock)
 
@@ -81,7 +85,10 @@ describe('uploadCsv (real POST /api/v1/csv-uploads)', () => {
   })
 
   it('parses CsvUploadResult on 201', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => okResponse(RESULT)))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse(RESULT)),
+    )
     const result = await uploadCsv({ ...baseArgs, file: sampleFile() })
     expect(result.status).toBe('received')
     expect(result.upload_id).toMatch(/^us_[a-z0-9]{12}$/)
@@ -99,7 +106,10 @@ describe('uploadCsv (real POST /api/v1/csv-uploads)', () => {
       [503, 'storage', {}],
     ]
     for (const [status, code, details] of cases) {
-      vi.stubGlobal('fetch', vi.fn(async () => errResponse(status, code, details)))
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => errResponse(status, code, details)),
+      )
       const err = await uploadCsv({ ...baseArgs, file: sampleFile() }).catch((e: unknown) => e)
       expect(err).toBeInstanceOf(DisUiServerHttpError)
       const e = err as DisUiServerHttpError
@@ -115,21 +125,32 @@ describe('uploadCsv (real POST /api/v1/csv-uploads)', () => {
 describe('uploadCsvWithSessionToken', () => {
   it('reads the session token from storage and uploads', async () => {
     localStorage.setItem('dis-ui.dev.authToken', 'stored-tok')
-    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
-      async () => okResponse(RESULT),
+    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(async () =>
+      okResponse(RESULT),
     )
     vi.stubGlobal('fetch', fetchMock)
 
-    await uploadCsvWithSessionToken({ file: sampleFile(), templateId: baseArgs.templateId, storeCode: 'TX-102' })
+    await uploadCsvWithSessionToken({
+      file: sampleFile(),
+      templateId: baseArgs.templateId,
+      storeCode: 'TX-102',
+    })
 
     const [, init] = fetchMock.mock.calls[0]
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer stored-tok')
   })
 
-  it('throws when no session token is held', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => okResponse(RESULT)))
+  it('throws when no access token is held', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => okResponse(RESULT)),
+    )
     await expect(
-      uploadCsvWithSessionToken({ file: sampleFile(), templateId: baseArgs.templateId, storeCode: 'TX-102' }),
-    ).rejects.toThrow(/no session token/)
+      uploadCsvWithSessionToken({
+        file: sampleFile(),
+        templateId: baseArgs.templateId,
+        storeCode: 'TX-102',
+      }),
+    ).rejects.toThrow(/no access token/)
   })
 })

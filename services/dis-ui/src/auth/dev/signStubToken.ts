@@ -16,10 +16,14 @@ export async function signStubToken(persona: StubPersona): Promise<string> {
     throw new Error('signStubToken is dev-only and must not run in a production build')
   }
 
+  // Namespaced Customer Master claims (https://sevyn8.com/*), matching the Auth0
+  // ID-token shape the SDK exposes and the dis-ui-server verifier reads. `sub`
+  // stays the standard subject; the principal id is the namespaced user_id.
   return new SignJWT({
-    tenant_id: persona.tenant_id,
-    store_id: persona.store_id,
-    roles: persona.roles,
+    'https://sevyn8.com/user_id': persona.sub,
+    'https://sevyn8.com/tenant_id': persona.tenant_id,
+    'https://sevyn8.com/store_id': persona.store_id,
+    'https://sevyn8.com/roles': persona.roles,
   })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(persona.sub)

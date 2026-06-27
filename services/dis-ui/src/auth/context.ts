@@ -7,9 +7,10 @@ export type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 export type AuthContextValue = {
   status: AuthStatus
   snapshot: AuthSnapshot | null
-  // Verifies and stores a raw token, then marks the user authenticated. Rejects
-  // (and changes nothing) if the token is invalid.
-  login: (rawToken: string) => Promise<void>
+  // Begins a sign-in. In Auth0 mode this redirects to the hosted login and the
+  // argument is ignored. In dev-stub mode it verifies and stores the given raw
+  // token, then marks the user authenticated (rejecting on an invalid token).
+  login: (rawToken?: string) => Promise<void>
   logout: () => void
 }
 

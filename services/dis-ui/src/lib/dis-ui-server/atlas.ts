@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { getJson, patchJson, postJson, postMultipart, sessionToken } from './client'
+import { getAccessToken } from './accessToken'
+import { getJson, patchJson, postJson, postMultipart } from './client'
 import { isRealMode } from './mode'
 
 // Atlas console client (A4 PR3b). Mirrors the existing client seam: csv-uploads.ts (the
@@ -142,7 +143,7 @@ export async function createDraft(
       form.append('table_key', tableKey)
     }
     return postMultipart<AtlasDraft>(`${ATLAS_BASE}/verticals/${vertical}/draft`, {
-      token: sessionToken(),
+      token: await getAccessToken(),
       form,
     })
   }

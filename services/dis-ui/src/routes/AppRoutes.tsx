@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router'
 
 import { AtlasBoundary } from '../auth/AtlasBoundary'
 import { AuthBoundary } from '../auth/AuthBoundary'
+import { getAuthMode } from '../auth/authMode'
 import { OpsBoundary } from '../auth/OpsBoundary'
 import { AppLayout } from './AppLayout'
 import { AtlasRegistry } from './atlas/AtlasRegistry'
@@ -36,7 +37,10 @@ import { StyleReference } from '../_style/StyleReference'
 export function AppRoutes() {
   return (
     <Routes>
-      <Route path="/dev/login" element={<DevLogin />} />
+      {/* The dev-stub persona picker exists ONLY in dev-stub mode; in Auth0 mode
+          AuthBoundary redirects unauthenticated users to the Auth0 hosted login, so
+          this route is never registered (and never reachable in a prod build). */}
+      {getAuthMode() === 'dev-stub' ? <Route path="/dev/login" element={<DevLogin />} /> : null}
       {/* Dev-only style reference (redesign R1 de-risk gate). Public like /dev/login, NOT
           in the tenant/ops nav; renders the new visual language for light/dark review. */}
       <Route path="/dev/style" element={<StyleReference />} />

@@ -14,10 +14,18 @@ type Claims = {
 }
 
 // Local signer so tests can control expiry and omit/misshape claims (signStubToken
-// always produces a valid, fresh token, which only covers the happy path).
+// always produces a valid, fresh token, which only covers the happy path). Emits the
+// NAMESPACED Customer Master claims (https://sevyn8.com/*) the verifier now reads; the
+// principal id is the namespaced user_id (sourced from the test's `sub` input), while
+// `sub` stays the standard subject. Undefined-valued claims are dropped by JSON encoding.
 async function sign(claims: Claims, expiration: string | number = '8h'): Promise<string> {
-  const { sub, ...rest } = claims
-  const builder = new SignJWT(rest as Record<string, unknown>)
+  const { sub, tenant_id, store_id, roles } = claims
+  const builder = new SignJWT({
+    'https://sevyn8.com/user_id': sub,
+    'https://sevyn8.com/tenant_id': tenant_id,
+    'https://sevyn8.com/store_id': store_id,
+    'https://sevyn8.com/roles': roles,
+  })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuedAt()
     .setIssuer(STUB_ISSUER)
@@ -49,7 +57,12 @@ describe('verifyToken', () => {
   })
 
   it('accepts a null tenant_id and store_id (ops, cross-tenant)', async () => {
-    const token = await sign({ sub: 'u_opsdev0001', tenant_id: null, store_id: null, roles: ['dis:ops'] })
+    const token = await sign({
+      sub: 'u_opsdev0001',
+      tenant_id: null,
+      store_id: null,
+      roles: ['dis:ops'],
+    })
     const snapshot = await verifyToken(token)
     expect(snapshot.tenantId).toBeNull()
     expect(snapshot.storeId).toBeNull()
@@ -64,7 +77,12 @@ describe('verifyToken', () => {
   it('rejects an expired token', async () => {
     const past = Math.floor(Date.now() / 1000) - 60
     const token = await sign(
-      { sub: tenant.sub, tenant_id: tenant.tenant_id, store_id: tenant.store_id, roles: tenant.roles },
+      {
+        sub: tenant.sub,
+        tenant_id: tenant.tenant_id,
+        store_id: tenant.store_id,
+        roles: tenant.roles,
+      },
       past,
     )
     await expect(verifyToken(token)).rejects.toMatchObject({ reason: 'expired' })

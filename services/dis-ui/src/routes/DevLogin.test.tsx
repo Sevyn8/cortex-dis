@@ -27,6 +27,8 @@ function renderApp() {
 describe('DevLogin persona switch', () => {
   beforeEach(async () => {
     localStorage.clear()
+    // DevLogin exists only in dev-stub mode (the /dev/login route is registered then).
+    vi.stubEnv('VITE_AUTH_MODE', 'dev-stub')
     // pick() now logs in with pre-supplied per-persona tokens from VITE_STUB_TOKEN_*
     // (no client-side minting). Mint valid dev-stub tokens for the test and expose
     // them via the env the UI reads.
