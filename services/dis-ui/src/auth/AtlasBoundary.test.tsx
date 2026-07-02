@@ -21,14 +21,14 @@ const ops: AuthSnapshot = {
   roles: ['dis:ops', 'dis:read'],
 }
 
-function renderBoundary(snapshot: AuthSnapshot | null) {
+function renderBoundary(snapshot: AuthSnapshot | null, rolesResolving = false) {
   return renderWithProviders(
     <Routes>
       <Route element={<AtlasBoundary />}>
         <Route index element={<p>atlas console body</p>} />
       </Route>
     </Routes>,
-    { snapshot, initialEntries: ['/'] },
+    { snapshot, initialEntries: ['/'], rolesResolving },
   )
 }
 
@@ -47,6 +47,15 @@ describe('AtlasBoundary', () => {
   it('denies a null snapshot (fail closed)', () => {
     renderBoundary(null)
     expect(screen.getByRole('alert')).toHaveTextContent(/access denied/i)
+    expect(screen.queryByText('atlas console body')).not.toBeInTheDocument()
+  })
+
+  it('shows loading (not PermissionDenied) while roles are resolving', () => {
+    // DIS step 2: roles not yet known (BFF resolution in flight). The boundary must
+    // render loading, never flash PermissionDenied, even though isSuperAdmin is false.
+    renderBoundary({ userId: 'u_sa', tenantId: null, storeId: null, roles: [] }, true)
+    expect(screen.getByText('Loading...')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByText('atlas console body')).not.toBeInTheDocument()
   })
 })

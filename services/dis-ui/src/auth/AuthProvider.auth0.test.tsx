@@ -37,13 +37,25 @@ vi.mock('@auth0/auth0-react', () => ({
   }),
 }))
 
+// DIS step 2: the bridge resolves DIS roles from the BFF once per session. Mock the
+// roles module so tests are deterministic (no fetch/network); the default resolves
+// to no roles so the token-claim tests are unaffected.
+const r = vi.hoisted(() => ({
+  getMyRoles: vi.fn<() => Promise<{ roles: string[]; resolved: boolean }>>(async () => ({
+    roles: [],
+    resolved: true,
+  })),
+}))
+vi.mock('../lib/dis-ui-server/roles', () => ({ getMyRoles: r.getMyRoles }))
+
 const NS = 'https://sevyn8.com/'
 
 function Consumer() {
-  const { status, snapshot, logout } = useAuth()
+  const { status, snapshot, rolesResolving, logout } = useAuth()
   return (
     <div>
       <span data-testid="status">{status}</span>
+      <span data-testid="roles-resolving">{String(rolesResolving)}</span>
       <span data-testid="snapshot">{JSON.stringify(snapshot)}</span>
       <button type="button" onClick={() => logout()}>
         Log out
@@ -62,6 +74,8 @@ beforeEach(() => {
   h.loginWithRedirect.mockClear()
   h.logout.mockClear()
   h.getAccessTokenSilently.mockClear()
+  r.getMyRoles.mockReset()
+  r.getMyRoles.mockResolvedValue({ roles: [], resolved: true })
   setAccessTokenGetter(null)
 })
 
@@ -71,7 +85,7 @@ afterEach(() => {
 })
 
 describe('AuthProvider (Auth0 mode)', () => {
-  it('derives the snapshot from the namespaced ID-token claims', () => {
+  it('derives the snapshot from the namespaced ID-token claims', async () => {
     h.state = {
       isLoading: false,
       isAuthenticated: true,
@@ -90,6 +104,9 @@ describe('AuthProvider (Auth0 mode)', () => {
       </AuthProvider>,
     )
     expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    // Let the once-per-session roles resolution settle (default: no CM roles), then
+    // the snapshot is the token claims unioned with the (empty) resolved set.
+    await waitFor(() => expect(screen.getByTestId('roles-resolving')).toHaveTextContent('false'))
     expect(JSON.parse(screen.getByTestId('snapshot').textContent ?? 'null')).toEqual({
       userId: '019e5e3c-b5d3-705f-9002-2451c4ca2626',
       tenantId: 't_acme',
@@ -163,5 +180,95 @@ describe('AuthProvider (Auth0 mode)', () => {
     await waitFor(() => expect(h.loginWithRedirect).toHaveBeenCalled())
     expect(screen.queryByText('protected')).not.toBeInTheDocument()
     expect(screen.getByText(/signing in/i)).toBeInTheDocument()
+  })
+
+  // --- DIS step 2: BFF role resolution (Auth0 mode) ---
+
+  it('merges BFF-resolved roles into the snapshot (roles absent from the token)', async () => {
+    // The token carries no roles claim (as real CM tokens do not); the BFF resolves
+    // atlas:schema:publish, which must appear in the snapshot for the UI gate.
+    r.getMyRoles.mockResolvedValue({ roles: ['atlas:schema:publish'], resolved: true })
+    h.state = {
+      isLoading: false,
+      isAuthenticated: true,
+      error: undefined,
+      user: { sub: 'auth0|sa', [`${NS}user_id`]: 'u_sa', [`${NS}roles`]: [] },
+    }
+    render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('roles-resolving')).toHaveTextContent('false'))
+    expect(JSON.parse(screen.getByTestId('snapshot').textContent ?? 'null').roles).toEqual([
+      'atlas:schema:publish',
+    ])
+    expect(r.getMyRoles).toHaveBeenCalledTimes(1) // once per session
+  })
+
+  it('stays authenticated with empty roles when BFF resolution fails (fail-safe)', async () => {
+    r.getMyRoles.mockRejectedValue(new Error('network down'))
+    h.state = {
+      isLoading: false,
+      isAuthenticated: true,
+      error: undefined,
+      user: { sub: 'auth0|x', [`${NS}user_id`]: 'u_x', [`${NS}roles`]: [] },
+    }
+    render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('roles-resolving')).toHaveTextContent('false'))
+    // Fail-safe: authenticated (tenant surfaces work), role surfaces hidden (roles empty).
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    expect(JSON.parse(screen.getByTestId('snapshot').textContent ?? 'null').roles).toEqual([])
+  })
+
+  it('honors the BFF resolved=false fail-safe signal (roles hidden)', async () => {
+    r.getMyRoles.mockResolvedValue({ roles: [], resolved: false })
+    h.state = {
+      isLoading: false,
+      isAuthenticated: true,
+      error: undefined,
+      user: { sub: 'auth0|x', [`${NS}user_id`]: 'u_x', [`${NS}roles`]: [] },
+    }
+    render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>,
+    )
+    await waitFor(() => expect(screen.getByTestId('roles-resolving')).toHaveTextContent('false'))
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    expect(JSON.parse(screen.getByTestId('snapshot').textContent ?? 'null').roles).toEqual([])
+  })
+
+  it('exposes rolesResolving=true while the BFF call is in flight', async () => {
+    // A deferred getMyRoles that we resolve manually: rolesResolving is true until it settles.
+    let resolveRoles: (v: { roles: string[]; resolved: boolean }) => void = () => {}
+    r.getMyRoles.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRoles = resolve
+      }),
+    )
+    h.state = {
+      isLoading: false,
+      isAuthenticated: true,
+      error: undefined,
+      user: { sub: 'auth0|sa', [`${NS}user_id`]: 'u_sa', [`${NS}roles`]: [] },
+    }
+    render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>,
+    )
+    // Authenticated immediately (tenant surfaces work) but roles still resolving.
+    expect(screen.getByTestId('status')).toHaveTextContent('authenticated')
+    expect(screen.getByTestId('roles-resolving')).toHaveTextContent('true')
+    resolveRoles({ roles: ['atlas:schema:publish'], resolved: true })
+    await waitFor(() => expect(screen.getByTestId('roles-resolving')).toHaveTextContent('false'))
+    expect(JSON.parse(screen.getByTestId('snapshot').textContent ?? 'null').roles).toEqual([
+      'atlas:schema:publish',
+    ])
   })
 })

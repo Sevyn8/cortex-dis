@@ -14,12 +14,15 @@ import type { AuthContextValue } from '../auth/context'
 // pass initialEntries to control the starting route (e.g. for AppRoutes tests).
 export function renderWithProviders(
   ui: ReactNode,
-  opts: { snapshot: AuthSnapshot | null; initialEntries?: string[] },
+  opts: { snapshot: AuthSnapshot | null; initialEntries?: string[]; rolesResolving?: boolean },
 ) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const authValue: AuthContextValue = {
     status: opts.snapshot === null ? 'unauthenticated' : 'authenticated',
     snapshot: opts.snapshot,
+    // Default false: existing tests gate on the snapshot synchronously, unchanged.
+    // A test passes true to assert the role boundaries' resolving/loading state.
+    rolesResolving: opts.rolesResolving ?? false,
     login: () => Promise.resolve(),
     logout: () => {},
   }
