@@ -12,7 +12,14 @@ import { useAuth } from './useAuth'
 // authenticated here. The backend require_super_admin (dis-ui-server) is the REAL gate;
 // this boundary is UX (it hides a surface the BFF would 403 anyway).
 export function AtlasBoundary() {
-  const { snapshot } = useAuth()
+  const { snapshot, rolesResolving } = useAuth()
+  // Roles are resolved from the BFF once per session (Auth0 mode, DIS step 2). Until
+  // that completes, render a loading state rather than flashing PermissionDenied on a
+  // snapshot whose roles are not yet known. dev-stub mode never resolves (roles come
+  // from the token), so rolesResolving is always false there.
+  if (rolesResolving) {
+    return <p>Loading...</p>
+  }
   const allowed = snapshot !== null && isSuperAdmin(snapshot)
   return allowed ? (
     <Outlet />

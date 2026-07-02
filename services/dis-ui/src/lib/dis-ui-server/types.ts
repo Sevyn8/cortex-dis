@@ -14,3 +14,14 @@ export type MeResponse = {
   // Display name of the tenant; null for ops users (cross-tenant, no single tenant).
   tenant_name: string | null
 }
+
+// The dis-ui-server GET /me/roles response: the caller's resolved DIS role strings
+// (DIS step 2). Customer Master issues no roles claim on the token, so the SPA
+// resolves roles through the BFF, which maps CM grants to role strings server-side
+// (the tuple->role mapping is NOT duplicated here). `resolved` is the fail-safe
+// signal: false means the BFF could not resolve (CM unavailable/unset) and returned
+// an empty set, so the SPA hides role surfaces while tenant-default surfaces work.
+export type MeRolesResponse = {
+  roles: string[]
+  resolved: boolean
+}

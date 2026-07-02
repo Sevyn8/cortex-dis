@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { setAccessTokenGetter } from '../lib/dis-ui-server/accessToken'
+import { getMyRoles } from '../lib/dis-ui-server/roles'
 import type { AuthSnapshot } from './AuthSnapshot'
 import { snapshotFromClaims } from './AuthSnapshot'
 import { getAuth0Config } from './Auth0Config'
@@ -64,25 +65,72 @@ function Auth0AuthBridge({ children }: { children: ReactNode }) {
   // localStorage in Auth0 mode.
   setAccessTokenGetter(() => getAccessTokenSilently())
 
-  const value = useMemo<AuthContextValue>(() => {
-    // Fail-safe: any SDK error, or claims that don't map, leave the user
-    // unauthenticated (AuthBoundary then redirects) - never half-authenticated.
-    let status: AuthStatus = 'unauthenticated'
-    let snapshot: AuthSnapshot | null = null
+  // The identity + status derived from the verified token claims (unchanged logic).
+  // Fail-safe: any SDK error, or claims that don't map, leave the user
+  // unauthenticated (AuthBoundary then redirects) - never half-authenticated.
+  const base = useMemo<{ status: AuthStatus; snapshot: AuthSnapshot | null }>(() => {
     if (isLoading) {
-      status = 'loading'
-    } else if (isAuthenticated && error === undefined && user !== undefined) {
+      return { status: 'loading', snapshot: null }
+    }
+    if (isAuthenticated && error === undefined && user !== undefined) {
       try {
-        snapshot = snapshotFromClaims(user as Record<string, unknown>)
-        status = 'authenticated'
+        return { status: 'authenticated', snapshot: snapshotFromClaims(user as Record<string, unknown>) }
       } catch {
-        snapshot = null
-        status = 'unauthenticated'
+        return { status: 'unauthenticated', snapshot: null }
       }
     }
+    return { status: 'unauthenticated', snapshot: null }
+  }, [isLoading, isAuthenticated, user, error])
+
+  // DIS step 2: Customer Master issues no roles claim, so resolve the caller's DIS
+  // roles from the BFF ONCE per authenticated session (Auth0 mode only). The result is
+  // keyed by userId so a login/logout/user-change is "not yet resolved" WITHOUT a
+  // synchronous setState in the effect body: resolution only ever setState()s in the
+  // async callbacks. Kept in memory only, consistent with the token.
+  const [resolved, setResolved] = useState<{ userId: string; roles: string[] } | null>(null)
+  const authedUserId = base.snapshot?.userId ?? null
+
+  useEffect(() => {
+    if (authedUserId === null) {
+      return // not authenticated (or logged out): nothing to resolve
+    }
+    let active = true
+    getMyRoles()
+      .then((res) => {
+        // The BFF is itself fail-safe (resolved=false => roles hidden); honor it.
+        if (active) setResolved({ userId: authedUserId, roles: res.resolved ? res.roles : [] })
+      })
+      .catch(() => {
+        // Transport/other failure: fail-safe to no roles. The user stays
+        // authenticated (tenant-default surfaces work); role surfaces stay hidden.
+        if (active) setResolved({ userId: authedUserId, roles: [] })
+      })
+    return () => {
+      active = false
+    }
+  }, [authedUserId])
+
+  const value = useMemo<AuthContextValue>(() => {
+    // Roles count as resolved only for the CURRENT user; otherwise they are still
+    // being fetched (null) and the role boundaries render loading, not PermissionDenied.
+    const resolvedRoles =
+      resolved !== null && authedUserId !== null && resolved.userId === authedUserId
+        ? resolved.roles
+        : null
+    const rolesResolving = base.snapshot !== null && resolvedRoles === null
+    const snapshot: AuthSnapshot | null =
+      base.snapshot === null
+        ? null
+        : {
+            ...base.snapshot,
+            // CM is authoritative; union with any token-claim roles (empty today),
+            // mirroring the server's require_super_admin resolution.
+            roles: [...new Set([...base.snapshot.roles, ...(resolvedRoles ?? [])])],
+          }
     return {
-      status,
+      status: base.status,
       snapshot,
+      rolesResolving,
       async login() {
         await loginWithRedirect()
       },
@@ -90,7 +138,7 @@ function Auth0AuthBridge({ children }: { children: ReactNode }) {
         void logout({ logoutParams: { returnTo: window.location.origin } })
       },
     }
-  }, [isLoading, isAuthenticated, user, error, loginWithRedirect, logout])
+  }, [base, resolved, authedUserId, loginWithRedirect, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
@@ -148,6 +196,9 @@ function DevStubAuthProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       snapshot,
+      // Dev-stub roles come from the persona token via snapshotFromClaims; there is
+      // no BFF resolution, so the role boundaries never wait. UNCHANGED behavior.
+      rolesResolving: false,
       async login(rawToken?: string) {
         if (rawToken === undefined) {
           throw new Error('dev-stub login requires a token')
