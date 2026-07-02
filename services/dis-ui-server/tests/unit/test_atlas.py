@@ -22,6 +22,8 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from dis_ui_server.atlas import InMemoryDraftStore
+from dis_ui_server.auth import cm_permissions as cm
+from dis_ui_server.auth.cm_permissions import PermissionGrant
 from dis_ui_server.infer.proposer import FieldProposer
 from dis_ui_server.main import create_app
 from dis_ui_server.suggest.vertex_client import VertexClient
@@ -31,6 +33,23 @@ TokenMinter = Callable[..., str]
 _API = "/api/v1"
 _CSV = b"sku_id,price,name\nA1,10.50,Apple\nB2,20.00,Banana\nC3,30.25,Cherry\n"
 
+# The CM grant that resolves to the Super Admin role (A5). CM issues no roles claim,
+# so the Atlas gate resolves atlas:schema:publish from /me/permissions; these tests
+# inject a fake CM client returning this grant for the super-admin persona.
+_ATLAS_GRANT = PermissionGrant(
+    module="ATLAS", resource="SCHEMA", action="PUBLISH", scope="GLOBAL", anchor_path=None
+)
+
+
+class _CmFake:
+    """Fake CM permissions client (honors the CmPermissionsClient Protocol)."""
+
+    def __init__(self, grants: list[PermissionGrant]) -> None:
+        self._grants = grants
+
+    async def get_permissions(self, bearer_token: str) -> list[PermissionGrant]:
+        return self._grants
+
 
 @pytest.fixture
 def atlas_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
@@ -39,6 +58,10 @@ def atlas_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     monkeypatch.setenv("PUBSUB_PROJECT_ID", "local-dis")
     monkeypatch.setenv("PUBSUB_EMULATOR_HOST", "127.0.0.1:9")
     monkeypatch.setenv("STORAGE_EMULATOR_HOST", "http://127.0.0.1:9")
+    # Default: CM resolves the Super Admin authority for the super-admin persona.
+    # The negative gate tests override this with an empty-grant fake. Teardown is the
+    # conftest autouse _reset_cm_permissions_client fixture.
+    cm.set_permissions_client(_CmFake([_ATLAS_GRANT]))
     app = create_app()
     with TestClient(app) as client:
         # Keep the no-DB handler tests on the in-memory double: production now wires
@@ -49,7 +72,10 @@ def atlas_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
 
 
 def _admin(mint_token: TokenMinter) -> dict[str, str]:
-    token = mint_token(user_type="PLATFORM", tenant_id=None, roles=("atlas:schema:publish",))
+    # A real CM token carries NO roles claim; the Super Admin authority is resolved
+    # DB-side from CM (the atlas_client fixture injects the granting fake). Minting
+    # without the role proves the gate passes on CM resolution, not a token claim.
+    token = mint_token(user_type="PLATFORM", tenant_id=None, roles=None)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -68,6 +94,8 @@ def _create_draft(client: TestClient, headers: dict[str, str]) -> str:
 
 
 def test_super_admin_gate_blocks_non_super_admin(atlas_client: TestClient, mint_token: TokenMinter) -> None:
+    # CM returns this ops caller's grants, which do NOT include atlas:schema:publish.
+    cm.set_permissions_client(_CmFake([]))
     ops_token = mint_token(user_type="PLATFORM", tenant_id=None, roles=("dis:ops", "dis:read"))
     headers = {"Authorization": f"Bearer {ops_token}"}
     cases = [
@@ -271,6 +299,8 @@ def test_list_status_filter_is_server_side(atlas_client: TestClient, mint_token:
 
 
 def test_list_drafts_super_admin_gate(atlas_client: TestClient, mint_token: TokenMinter) -> None:
+    # CM returns no atlas:schema:publish grant for this ops caller -> 403.
+    cm.set_permissions_client(_CmFake([]))
     ops_token = mint_token(user_type="PLATFORM", tenant_id=None, roles=("dis:ops",))
     resp = atlas_client.get(f"{_API}/atlas/drafts", headers={"Authorization": f"Bearer {ops_token}"})
     assert resp.status_code == 403

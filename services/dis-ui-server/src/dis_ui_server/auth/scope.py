@@ -23,17 +23,23 @@ from fastapi import Depends, Request
 
 from dis_core.errors import (
     AuthTokenError,
+    CmPermissionsClientError,
+    CmPermissionsUnavailableError,
     OpsRoleRequiredError,
     SuperAdminRequiredError,
     TenantScopeError,
+)
+from dis_ui_server.auth.cm_permissions import (
+    _get_permissions_client,
+    roles_from_grants,
 )
 from dis_ui_server.auth.identity import Identity, UserType
 from dis_ui_server.auth.verifier import verify_token
 
 OPS_ROLE = "dis:ops"
 # The Atlas console Super Admin role. The REAL role is Customer Master issued at
-# global scope (ADR-ATLAS-001 decision 6) and lands in A5 (Sanjeev's swimlane);
-# A4 PR1 stubs the gate by checking this role string on the verified token.
+# global scope (ADR-ATLAS-001 decision 6); A5 (this change) resolves it DB-side
+# from CM's /me/permissions rather than reading a (never-issued) token roles claim.
 SUPER_ADMIN_ROLE = "atlas:schema:publish"
 
 _BEARER_PREFIX = "Bearer "
@@ -51,6 +57,21 @@ async def get_current_identity(request: Request) -> Identity:
     if not header.startswith(_BEARER_PREFIX):
         raise AuthTokenError("Authorization header is not a Bearer token", reason="missing_bearer")
     return verify_token(header[len(_BEARER_PREFIX) :])
+
+
+def _extract_bearer(request: Request) -> str:
+    """Re-read the raw bearer token from the request (same rule as get_current_identity).
+
+    Used by :func:`require_super_admin` to FORWARD the caller's verified,
+    shared-audience token to Customer Master. ``get_current_identity`` runs first
+    as a dependency, so a well-formed header is already guaranteed; this remains
+    fail-closed (a missing/non-Bearer header is a 401-mapped ``AuthTokenError``)
+    and leaves ``get_current_identity`` textually unchanged.
+    """
+    header = request.headers.get("Authorization")
+    if header is None or not header.startswith(_BEARER_PREFIX):
+        raise AuthTokenError("Authorization header missing", reason="missing_bearer")
+    return header[len(_BEARER_PREFIX) :]
 
 
 async def require_tenant(
@@ -75,15 +96,39 @@ async def require_ops(
 
 
 async def require_super_admin(
+    request: Request,
     identity: Annotated[Identity, Depends(get_current_identity)],
 ) -> Identity:
-    """Guarantee the Atlas Super Admin role, else 403 (mirrors ``require_ops``).
+    """Guarantee the Atlas Super Admin role, resolved DB-side from Customer Master.
 
     The Atlas console is platform-scoped and Super-Admin-only (ADR-ATLAS-001
-    decision 6). A4 PR1 gates on the ``SUPER_ADMIN_ROLE`` string (the stub); the
-    real Customer-Master-issued global role lands in A5 (Sanjeev's swimlane).
+    decision 6). The ``atlas:schema:publish`` authority is CM-issued at global
+    scope; CM puts no roles claim on the token, so this gate FORWARDS the caller's
+    verified (shared-audience) bearer to CM ``GET /api/v1/me/permissions``, maps the
+    returned grants to DIS role strings (Option A), and requires the role. CM is the
+    authoritative source; any token roles are unioned in (harmless, empty today).
+
+    FAIL-CLOSED: every CM failure denies, never grants. A CM non-200 / malformed
+    body raises ``CmPermissionsClientError``; a timeout / unreachable CM (or missing
+    ``CM_BASE_URL``) raises ``CmPermissionsUnavailableError``; both map to 503. Any
+    other unexpected error is caught by the broad backstop and re-raised as a 503
+    denial. A 200 response WITHOUT the grant is a plain 403 (not a super admin).
+    No caching in v1 (follow-up: a short-TTL per-token cache).
     """
-    if SUPER_ADMIN_ROLE not in identity.roles:
+    token = _extract_bearer(request)
+    try:
+        grants = await _get_permissions_client().get_permissions(token)
+    except CmPermissionsClientError:
+        # Already a fail-closed, 503-mapped denial (non-200, timeout, unreachable,
+        # missing config, malformed body). Never a grant; propagate as-is.
+        raise
+    except Exception as exc:  # noqa: BLE001 - deliberate fail-closed backstop
+        # Any unexpected resolution error denies coarsely (mirrors the verifier's
+        # backstop). This is a translation, not a swallow: it never reaches the
+        # handler with the gate un-enforced.
+        raise CmPermissionsUnavailableError("Customer Master permission resolution failed") from exc
+    resolved = roles_from_grants(grants) | set(identity.roles)
+    if SUPER_ADMIN_ROLE not in resolved:
         raise SuperAdminRequiredError(f"{SUPER_ADMIN_ROLE} role required for the Atlas console")
     return identity
 

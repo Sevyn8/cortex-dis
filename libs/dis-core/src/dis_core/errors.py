@@ -952,3 +952,46 @@ class EventPublishError(DisError):
         self.topic = topic
         self.tenant_id = tenant_id
         self.trace_id = trace_id
+
+
+# -- Customer Master permissions client errors (Atlas A5, DIS side) -------------
+# Raised by the dis-ui-server CM permissions client (auth/cm_permissions.py) when
+# it resolves the caller's grants from Customer Master's GET /api/v1/me/permissions
+# to gate the Atlas Super Admin role. Mirrors the IdentityClientError family: a base
+# carrying the transport-level outcome, plus an unavailable subclass. Both map to
+# HTTP 503 in the service's exception handlers (the "valid request, dependency
+# unreachable" precedent, like StorageError / EventPublishError). The super-admin
+# gate fails CLOSED on any of these: a 503 denial is never a grant. Never carries
+# the token or raw claim values (credential material).
+
+
+class CmPermissionsClientError(DisError):
+    """Base error for Customer Master permissions-resolution calls.
+
+    Carries the HTTP status code and any error-envelope fields the CM server
+    returned, for callers/logs that branch on the transport-level outcome. Maps to
+    HTTP 503 (fail-closed denial), never a grant.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        error_code: str | None = None,
+        trace_id: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.message = message
+        self.status_code = status_code
+        self.error_code = error_code
+        self.trace_id = trace_id
+
+
+class CmPermissionsUnavailableError(CmPermissionsClientError):
+    """Customer Master was unreachable / timed out while resolving permissions.
+
+    Raised for transport failures (connect/read timeout, connection refused) and as
+    the broad fail-closed backstop for any unexpected resolution error. Maps to HTTP
+    503; the super-admin gate denies (never grants) on this path.
+    """

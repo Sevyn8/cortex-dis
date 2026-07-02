@@ -65,6 +65,12 @@ _GEMINI_IMPERSONATE_SA = "GEMINI_IMPERSONATE_SA"
 _JWT_ISSUER = "JWT_ISSUER"
 _JWT_AUDIENCE = "JWT_AUDIENCE"
 _JWT_JWKS_URL = "JWT_JWKS_URL"
+# OPTIONAL (Atlas A5): the Customer Master origin the Super Admin gate calls to
+# resolve atlas:schema:publish (GET /api/v1/me/permissions). NOT required: unset
+# is a normal state for deployments without the Atlas console, so it must never
+# abort startup. When unset, require_super_admin fails CLOSED (503 deny), never
+# grants. A fixed per-deployment origin, not a secret.
+_CM_BASE_URL = "CM_BASE_URL"
 
 # The real Customer Master / Auth0 verifier values. These are fixed
 # per-deployment identifiers, not secrets and not placeholders, so the default
@@ -135,6 +141,9 @@ class UiServerConfig:
     gemini_vertex_location: str | None = None
     # OPTIONAL: SA to impersonate for Vertex calls only; unset -> ambient ADC.
     gemini_impersonate_sa: str | None = None
+    # OPTIONAL (Atlas A5): Customer Master origin for the Super Admin permission
+    # resolution. Unset -> the super-admin gate fails closed (503), never grants.
+    cm_base_url: str | None = None
 
     @classmethod
     def from_env(cls) -> UiServerConfig:
@@ -167,6 +176,9 @@ class UiServerConfig:
         gemini_vertex_project = os.environ.get(_GEMINI_VERTEX_PROJECT) or None
         gemini_vertex_location = os.environ.get(_GEMINI_VERTEX_LOCATION) or None
         gemini_impersonate_sa = os.environ.get(_GEMINI_IMPERSONATE_SA) or None
+        # OPTIONAL: read with no raise. Unset -> the Atlas super-admin gate fails
+        # closed; missing CM config must never abort startup for the rest of the service.
+        cm_base_url = os.environ.get(_CM_BASE_URL) or None
         return cls(
             postgres_url=postgres_url,
             gcs_bucket_bronze=gcs_bucket_bronze,
@@ -177,6 +189,7 @@ class UiServerConfig:
             gemini_vertex_project=gemini_vertex_project,
             gemini_vertex_location=gemini_vertex_location,
             gemini_impersonate_sa=gemini_impersonate_sa,
+            cm_base_url=cm_base_url,
         )
 
 

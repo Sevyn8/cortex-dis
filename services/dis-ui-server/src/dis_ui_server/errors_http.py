@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse
 
 from dis_core.errors import (
     AuthTokenError,
+    CmPermissionsClientError,
     DisError,
     DraftNotRatifiedError,
     DraftStateConflictError,
@@ -65,6 +66,11 @@ _STATUS_BY_ERROR: dict[type[DisError], int] = {
     OpsRoleRequiredError: 403,
     # Atlas console (A4).
     SuperAdminRequiredError: 403,  # not a Super Admin
+    # Atlas A5: CM could not authoritatively resolve the Super Admin authority
+    # (unreachable / timeout / non-200 / missing CM_BASE_URL / malformed body).
+    # 503 (the dependency-unreachable precedent below), a fail-closed denial —
+    # the super-admin gate never grants on this path.
+    CmPermissionsClientError: 503,
     DraftNotRatifiedError: 422,  # publish blocked: curated attributes still inferred
     DraftStateConflictError: 409,  # editing a locked/published draft
     # Slice 14b data endpoints (contract §2.3 + §7).
