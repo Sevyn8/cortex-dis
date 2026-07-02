@@ -24,6 +24,7 @@ from dis_ui_server.handlers import (
     dashboard,
     mapping_suggestions,
     mapping_templates,
+    me,
     quarantine,
     stores,
     template_mapping_fields,
@@ -38,3 +39,4 @@ api_router.include_router(mapping_suggestions.router)
 api_router.include_router(quarantine.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(atlas.router)
+api_router.include_router(me.router)
