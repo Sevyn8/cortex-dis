@@ -50,9 +50,10 @@ from dis_core.errors import (
 from dis_core.trace_id import bind_trace_id, new_trace_id
 from dis_testing import fixtures as fx
 from dis_testing.fakes.customer_master import build_jwks
+from dis_ui_server.auth import cm_permissions as cm_permissions_module
 from dis_ui_server.auth import verifier as verifier_module
 from dis_ui_server.auth.identity import Identity
-from dis_ui_server.auth.scope import require_ops, require_tenant
+from dis_ui_server.auth.scope import require_ops, require_super_admin, require_tenant
 from dis_ui_server.auth.verifier import TokenVerifier
 from dis_ui_server.config import DEFAULT_JWT_AUDIENCE, DEFAULT_JWT_ISSUER
 from dis_ui_server.main import create_app
@@ -137,6 +138,19 @@ def _inject_rs256_verifier() -> Iterator[None]:
     )
     yield
     verifier_module.set_verifier(None)
+
+
+@pytest.fixture(autouse=True)
+def _reset_cm_permissions_client() -> Iterator[None]:
+    """Reset the CM permissions-client singleton after each test (Atlas A5).
+
+    Mirrors the verifier teardown so an injected fake never leaks across tests.
+    Tests that exercise ``require_super_admin`` install their own fake via
+    ``cm_permissions.set_permissions_client(...)``; every other test runs with the
+    singleton at ``None`` (proving the ops/tenant gates never touch CM).
+    """
+    yield
+    cm_permissions_module.set_permissions_client(None)
 
 
 class TokenMinter(Protocol):
@@ -255,6 +269,14 @@ def _probe_router() -> APIRouter:
     async def ops_probe(
         identity: Annotated[Identity, Depends(require_ops)],
     ) -> dict[str, str | None]:
+        return {"user_id": identity.user_id, "tenant_id": identity.tenant_id}
+
+    @router.get("/super-admin")
+    async def super_admin_probe(
+        identity: Annotated[Identity, Depends(require_super_admin)],
+    ) -> dict[str, str | None]:
+        # Atlas A5: exercises the CM-resolved Super Admin gate through the real
+        # dependency + handler pipeline (the CM client is injected per test).
         return {"user_id": identity.user_id, "tenant_id": identity.tenant_id}
 
     @router.get("/raise/auth-token")
